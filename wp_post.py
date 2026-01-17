@@ -1,81 +1,74 @@
-﻿import os
-import json
+﻿import os, json, glob
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()
+WP_BASE = os.environ["WP_BASE"].rstrip("/")
+WP_USER = os.environ["WP_USER"]
+WP_APP_PASSWORD = os.environ["WP_APP_PASSWORD"]
+WP_POST_STATUS = os.environ.get("WP_POST_STATUS", "publish")
 
-def pick_latest(prefix: str, suffix: str) -> str:
-    if not os.path.isdir("output"):
-        raise RuntimeError("output フォルダがありません")
-    files = [f for f in os.listdir("output") if f.startswith(prefix) and f.endswith(suffix)]
-    files.sort()
-    if not files:
-        raise RuntimeError(f"output に {prefix}*{suffix} が見つかりません")
-    return os.path.join("output", files[-1])
+MODE = os.environ.get("MODE", "predict").strip().lower()
+print(f"[DEBUG] MODE = {MODE}")
 
-def wp_find_post_id_by_slug(slug: str):
-    base = f"{os.environ['WP_BASE'].rstrip('/')}/wp-json/wp/v2/posts"
-    auth = (os.environ["WP_USER"], os.environ["WP_APP_PASSWORD"])
-    r = requests.get(base, params={"slug": slug, "per_page": 1}, auth=auth, timeout=20)
+def wp_request(method, path, **kwargs):
+    url = f"{WP_BASE}{path}"
+    auth = (WP_USER, WP_APP_PASSWORD)
+    return requests.request(method, url, auth=auth, timeout=30, **kwargs)
+
+def upsert_post(slug: str, title: str, html: str, status: str):
+    # 既存検索（slug一致）
+    r = wp_request("GET", "/wp-json/wp/v2/posts", params={"slug": slug, "per_page": 1})
     r.raise_for_status()
-    arr = r.json()
-    if isinstance(arr, list) and arr and "id" in arr[0]:
-        return int(arr[0]["id"])
-    return None
+    items = r.json()
 
-def wp_upsert(title: str, html: str, slug: str, status: str):
-    base = f"{os.environ['WP_BASE'].rstrip('/')}/wp-json/wp/v2/posts"
-    auth = (os.environ["WP_USER"], os.environ["WP_APP_PASSWORD"])
+    payload = {"title": title, "content": html, "status": status, "slug": slug}
 
-    payload = {
-        "title": title,
-        "content": html,
-        "status": status,
-        "slug": slug,  # ★ここが最重要：固定URLで完全分離
-    }
-
-    post_id = wp_find_post_id_by_slug(slug)
-    if post_id:
-        r = requests.post(f"{base}/{post_id}", auth=auth, json=payload, timeout=30)
-        r.raise_for_status()
-        return "updated", r.json()
+    if items:
+        post_id = items[0]["id"]
+        u = wp_request("POST", f"/wp-json/wp/v2/posts/{post_id}", json=payload)
+        u.raise_for_status()
+        return "updated", u.json().get("link")
     else:
-        r = requests.post(base, auth=auth, json=payload, timeout=30)
-        r.raise_for_status()
-        return "created", r.json()
+        c = wp_request("POST", "/wp-json/wp/v2/posts", json=payload)
+        c.raise_for_status()
+        return "created", c.json().get("link")
 
 def main():
-    MODE = os.environ.get("MODE", "predict")
-    status = os.environ.get("WP_POST_STATUS", "publish")
-
-    if MODE == "result":
-        json_path = pick_latest("result_", ".json")
-        html_path = json_path.replace(".json", ".html")
-        data = json.loads(open(json_path, encoding="utf-8").read())
-        html = open(html_path, encoding="utf-8").read()
-
-        # ★結果は result-YYYYMMDD-PLACE の slug に固定（日本語slug事故を避ける）
-        slug = f"result-{data['date'].replace('-','')}-{data['place_code']}"
-        title = data["title"]
-
+    # MODEで対象ファイルを決める
+    if MODE == "predict":
+        prefix = "predict_"
+        slug_prefix = "predict"
     else:
-        json_path = pick_latest("predict_", ".json")
+        prefix = "result_"
+        slug_prefix = "result"
+
+    files = sorted(glob.glob(f"output/{prefix}*.json"))
+    if not files:
+        raise RuntimeError(f"output に {prefix}*.json が見つかりません")
+
+    print(f"[DEBUG] files = {files}")
+
+    # 全部投稿（開催場ぶん）
+    for json_path in files:
+        data = json.load(open(json_path, encoding="utf-8"))
+
+        date = data.get("date")  # yyyymmdd
+        place = data.get("place") or data.get("track")  # 念のため両対応
+        place_code = data.get("place_code") or ""
+
+        # htmlは同名ファイルを読む
         html_path = json_path.replace(".json", ".html")
-        data = json.loads(open(json_path, encoding="utf-8").read())
         html = open(html_path, encoding="utf-8").read()
 
-        # ★予想は predict-YYYYMMDD-PLACE の slug に固定
-        slug = f"predict-{data['date'].replace('-','')}-{data['place_code']}"
-        title = data["title"]
+        # slugを日付+開催場で固定（=1日1場1記事）
+        slug = f"{slug_prefix}-{date}-{place_code}"
+        title = data.get("title") or f"{date} {place} {MODE}"
 
-    print("[DEBUG] MODE =", MODE)
-    print("[DEBUG] json_path =", json_path)
-    print("[DEBUG] slug =", slug)
+        print(f"[DEBUG] json_path = {json_path}")
+        print(f"[DEBUG] slug = {slug}")
 
-    action, res = wp_upsert(title, html, slug, status)
-    print("OK:", action)
-    print("Posted:", res.get("link"))
+        action, link = upsert_post(slug, title, html, WP_POST_STATUS)
+        print(f"OK: {action}")
+        print(f"Posted: {link}")
 
 if __name__ == "__main__":
     main()
