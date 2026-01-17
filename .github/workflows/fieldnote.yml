@@ -62,10 +62,8 @@ jobs:
 
       - name: Post predict to WordPress
         if: steps.mode.outputs.MODE == 'predict'
-        env:
-          MODE: predict
         run: |
-          python wp_post.py
+          MODE=predict python wp_post.py
 
       - name: Run result (generate output)
         if: steps.mode.outputs.MODE == 'result'
@@ -74,7 +72,5 @@ jobs:
 
       - name: Post result to WordPress
         if: steps.mode.outputs.MODE == 'result'
-        env:
-          MODE: result
         run: |
-          python wp_post.py
+          MODE=result python wp_post.py
