@@ -22,6 +22,9 @@ jobs:
       WP_POST_STATUS: ${{ secrets.WP_POST_STATUS }}
 
     steps:
+      - name: Set DATE (JST)
+        run: echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -81,3 +84,7 @@ jobs:
           MODE=result python wp_post.py
       - name: Set DATE (JST)
         run: echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
+
+      - name: Set DATE (JST)
+        run: echo "DATE=" >> $GITHUB_ENV
+
