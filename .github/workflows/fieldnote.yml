@@ -2,8 +2,8 @@
 
 on:
   schedule:
-    - cron: "0 21 * * *"  # JST 06:00
-    - cron: "0 14 * * *"  # JST 23:00
+    - cron: "0 21 * * *"  # JST 06:00（予想）
+    - cron: "0 14 * * *"  # JST 23:00（結果）
   workflow_dispatch:
     inputs:
       mode:
@@ -22,6 +22,7 @@ jobs:
       WP_POST_STATUS: ${{ secrets.WP_POST_STATUS }}
 
     steps:
+      # ★ ここでDATEを1回だけセット（これ以外いらない）
       - name: Set DATE (JST)
         run: echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
 
@@ -38,7 +39,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml python-dotenv
 
-      - name: Clean output (always)
+      - name: Clean output
         run: |
           rm -rf output
           mkdir -p output
@@ -68,7 +69,7 @@ jobs:
         run: |
           python predict_all_today.py
 
-      - name: Post predict to WordPress (all tracks)
+      - name: Post predict to WordPress
         if: steps.mode.outputs.MODE == 'predict'
         run: |
           MODE=predict python wp_post.py
@@ -78,13 +79,7 @@ jobs:
         run: |
           python result_all_today.py
 
-      - name: Post result to WordPress (all tracks)
+      - name: Post result to WordPress
         if: steps.mode.outputs.MODE == 'result'
         run: |
           MODE=result python wp_post.py
-      - name: Set DATE (JST)
-        run: echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
-
-      - name: Set DATE (JST)
-        run: echo "DATE=" >> $GITHUB_ENV
-
