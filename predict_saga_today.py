@@ -209,96 +209,76 @@ def render_text(title: str, preds) -> str:
     return "\n".join(lines)
 
 def render_html(title: str, preds) -> str:
-    """
-    - レースごとにテーブル化
-    - 指数(score)に応じてセル背景をグラデ風に色付け
-    - スマホでも見やすい（横スクロールなし / 余白調整）
-    """
+    # keiba_kesaki_bot の予想HTMLに寄せた（インラインstyle中心）
+    # - 見出し h2 / h3
+    # - テーブル：太めの見出し下線 + 交互行
+    # - 指数セル：80/70/60で色分け（背景ちょい）
+    import html as _html
 
-    def esc(s: str) -> str:
-        return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-
-    def clamp(x, lo, hi):
-        return max(lo, min(hi, x))
-
-    # score を 0..1 に正規化して色（淡→濃）を決める
-    # ここでは「そのレース内のmin..max」を使う（相対評価で見やすい）
-    def score_to_style(score: int, smin: int, smax: int) -> str:
-        if smax <= smin:
-            t = 0.5
-        else:
-            t = (score - smin) / (smax - smin)
-        t = clamp(t, 0.0, 1.0)
-
-        # 背景色：低い=薄いグレー、高い=薄い黄色→オレンジ寄り
-        # tに応じて少し濃くする（読みやすさ優先で“薄め”）
-        # 例: t=0 => #f5f5f5, t=1 => #ffe3a3
-        r = int(245 + (255 - 245) * t)
-        g = int(245 + (227 - 245) * t)  # 少し下げる
-        b = int(245 + (163 - 245) * t)  # さらに下げる
-        r, g, b = clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)
-
-        # 文字は基本黒でOK（淡色なので）
-        return f"background: rgb({r},{g},{b}); font-weight: 700;" if t > 0.85 else f"background: rgb({r},{g},{b});"
-
-    css = """
-<style>
-.fn-predict-wrap{max-width:780px;margin:0 auto;}
-.fn-title{font-size:22px;line-height:1.3;margin:8px 0 18px;font-weight:800;}
-.fn-race{margin:18px 0 22px;padding:14px;border:1px solid #eee;border-radius:14px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.04);}
-.fn-race h3{margin:0 0 10px;font-size:18px;font-weight:800;}
-.fn-table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:12px;border:1px solid #eee;}
-.fn-table th,.fn-table td{padding:10px 10px;border-bottom:1px solid #eee;font-size:15px;vertical-align:middle;}
-.fn-table th{background:#fafafa;font-weight:800;text-align:left;}
-.fn-table tr:last-child td{border-bottom:none;}
-.fn-mark{width:42px;text-align:center;font-weight:900;}
-.fn-umaban{width:54px;text-align:center;font-variant-numeric:tabular-nums;}
-.fn-score{width:84px;text-align:center;font-variant-numeric:tabular-nums;}
-.fn-name{font-weight:700;}
-.fn-note{color:#666;font-size:12px;margin-top:10px;}
-/* モバイル調整 */
-@media (max-width: 520px){
-  .fn-title{font-size:20px;}
-  .fn-table th,.fn-table td{padding:9px 8px;font-size:14px;}
-  .fn-race{padding:12px;border-radius:12px;}
-}
-</style>
-"""
-
-    parts = [css, '<div class="fn-predict-wrap">', f'<div class="fn-title">{esc(title)}</div>']
+    parts = []
+    parts.append(f"<h2>{_html.escape(title)}</h2>")
 
     for race in preds:
         rno = race["race_no"]
-        picks = race["picks"]
-
-        scores = [p["score"] for p in picks] if picks else [0]
-        smin, smax = min(scores), max(scores)
-
-        parts.append('<div class="fn-race">')
         parts.append(f"<h3>{rno}R</h3>")
-        parts.append('<table class="fn-table">')
-        parts.append("<thead><tr>"
-                     "<th class='fn-mark'>印</th>"
-                     "<th class='fn-umaban'>馬番</th>"
-                     "<th>馬名</th>"
-                     "<th class='fn-score'>指数</th>"
-                     "</tr></thead>")
-        parts.append("<tbody>")
 
-        for p in picks:
-            style = score_to_style(p["score"], smin, smax)
+        picks = race["picks"]  # 5頭
+
+        parts.append('<table style="width:100%;border-collapse:collapse;">')
+        parts.append(
+            '<thead><tr>'
+            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:center;white-space:nowrap;">印</th>'
+            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:center;white-space:nowrap;">馬番</th>'
+            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:left;">馬名</th>'
+            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:right;white-space:nowrap;">指数</th>'
+            '</tr></thead><tbody>'
+        )
+
+        for i, p in enumerate(picks):
+            mark = str(p.get("mark", ""))
+            umaban = str(p.get("umaban", ""))
+            name = str(p.get("name", ""))
+            score = p.get("score", 0)
+
+            try:
+                sc = float(score)
+            except:
+                sc = 0.0
+
+            rowbg = "#ffffff" if i % 2 == 0 else "#f8fafc"
+
+            # 指数セルだけ色（keiba_kesaki_botと同じ思想）
+            if sc >= 80:
+                cellbg = "#fee2e2"   # 赤薄
+            elif sc >= 70:
+                cellbg = "#fff7ed"   # オレンジ薄
+            elif sc >= 60:
+                cellbg = "#fefce8"   # 黄薄
+            else:
+                cellbg = rowbg
+
             parts.append("<tr>")
-            parts.append(f"<td class='fn-mark'>{esc(p['mark'])}</td>")
-            parts.append(f"<td class='fn-umaban'>{p['umaban']}</td>")
-            parts.append(f"<td class='fn-name'>{esc(p['name'])}</td>")
-            parts.append(f"<td class='fn-score' style='{style}'>{p['score']}</td>")
+            parts.append(
+                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;background:{rowbg};font-weight:800;">'
+                f'{_html.escape(mark)}</td>'
+            )
+            parts.append(
+                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;background:{rowbg};font-variant-numeric:tabular-nums;">'
+                f'{_html.escape(umaban)}</td>'
+            )
+            parts.append(
+                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;background:{rowbg};font-weight:700;">'
+                f'{_html.escape(name)}</td>'
+            )
+            parts.append(
+                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;background:{cellbg};font-variant-numeric:tabular-nums;font-weight:800;">'
+                f'{sc:.0f}</td>'
+            )
             parts.append("</tr>")
 
         parts.append("</tbody></table>")
-        parts.append("<div class='fn-note'>※ 指数セルは「そのレース内で高いほど濃く」表示（相対）</div>")
-        parts.append("</div>")
+        parts.append('<hr style="margin:18px 0;border:none;border-top:1px solid #e5e7eb;">')
 
-    parts.append("</div>")
     return "\n".join(parts)
 
 def main():
