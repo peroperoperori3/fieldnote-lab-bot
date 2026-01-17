@@ -272,7 +272,7 @@ def render_html(title: str, preds) -> str:
             )
             parts.append(
                 f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;background:{cellbg};font-variant-numeric:tabular-nums;font-weight:800;">'
-                f'{sc:.0f}</td>'
+                f'{sc:.2f}</td>'
             )
             parts.append("</tr>")
 
