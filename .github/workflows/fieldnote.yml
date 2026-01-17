@@ -2,8 +2,8 @@
 
 on:
   schedule:
-    - cron: "0 21 * * *"  # JST 06:00 (UTC 21:00) -> predict
-    - cron: "0 14 * * *"  # JST 23:00 (UTC 14:00) -> result
+    - cron: "0 21 * * *"  # JST 06:00
+    - cron: "0 14 * * *"  # JST 23:00
   workflow_dispatch:
     inputs:
       mode:
@@ -34,6 +34,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml python-dotenv
+
+      - name: Clean output (always)
+        run: |
+          rm -rf output
+          mkdir -p output
 
       - name: Decide MODE
         id: mode
