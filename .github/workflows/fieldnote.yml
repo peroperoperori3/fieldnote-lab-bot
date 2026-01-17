@@ -55,22 +55,22 @@ jobs:
             echo "MODE=predict" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run predict (generate output)
+      - name: Run predict (generate output for all tracks)
         if: steps.mode.outputs.MODE == 'predict'
         run: |
-          python predict_saga_today.py
+          python predict_all_today.py
 
-      - name: Post predict to WordPress
+      - name: Post predict to WordPress (all tracks)
         if: steps.mode.outputs.MODE == 'predict'
         run: |
           MODE=predict python wp_post.py
 
-      - name: Run result (generate output)
+      - name: Run result (generate output for all tracks)
         if: steps.mode.outputs.MODE == 'result'
         run: |
-          python result_saga_today.py
+          python result_all_today.py
 
-      - name: Post result to WordPress
+      - name: Post result to WordPress (all tracks)
         if: steps.mode.outputs.MODE == 'result'
         run: |
           MODE=result python wp_post.py
