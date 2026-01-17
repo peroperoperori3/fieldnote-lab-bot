@@ -24,7 +24,10 @@ jobs:
     steps:
       # ★ ここでDATEを1回だけセット（これ以外いらない）
       - name: Set DATE (JST)
-        run: echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+        run: echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
+
+      - name: Debug DATE
+        run: echo "DATE=$DATE"
 
       - name: Checkout
         uses: actions/checkout@v4
