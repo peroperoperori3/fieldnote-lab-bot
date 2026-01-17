@@ -88,9 +88,11 @@ def parse_kaisekisya_jockey_saga(html: str):
 
     return table
 
-def jockey_points(win: float, quin: float, tri: float) -> int:
+def jockey_points(win: float, quin: float, tri: float) -> float:
+    # 勝率・連対率・三連対率をそのまま重み付け
     raw = win * 0.45 + quin * 0.35 + tri * 0.20
-    return int(round(raw / 4.0))
+    # 競馬指数っぽくスケール調整（好みで係数いじってOK）
+    return round(raw / 4.0, 2)
 
 def norm_jockey3(s: str) -> str:
     s = re.sub(r"\s+", "", s)
@@ -154,7 +156,7 @@ def parse_keibablood_tables(html: str):
             rows.append({
                 "umaban": int(mban.group(0)),
                 "name": vals[i_name].strip(),
-                "base_index": int(midx.group(0)),
+                "base_index": float(midx.group(0)),
                 "jockey": jockey,
             })
 
@@ -172,8 +174,8 @@ def build_predictions():
         horses = []
         for h in kb_races[rno]:
             rates = match_jockey_by3(norm_jockey3(h["jockey"]), jockey_stats)
-            add = jockey_points(*rates) if rates else 0
-            score = h["base_index"] + add
+            add = jockey_points(*rates) if rates else 0.0
+            score = round(h["base_index"] + add, 2)
             horses.append({**h, "jockey_add": add, "score": score})
 
         horses.sort(key=lambda x: (-x["score"], -x["base_index"], x["umaban"]))
