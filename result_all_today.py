@@ -1,15 +1,14 @@
 ﻿import os, re, json, time
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
 UA = {"User-Agent":"Mozilla/5.0", "Accept-Language":"ja,en;q=0.8"}
 MARKS = ["◎","〇","▲","△","☆"]
 
-# keiba.go.jp babaCode
+# keiba.go.jp babaCode（帯広は対象外）
 BABA_CODE = {
-  "帯広": 3,
   "門別": 36,
   "盛岡": 10,
   "水沢": 11,
@@ -26,6 +25,24 @@ BABA_CODE = {
   "佐賀": 32,
 }
 
+# keibablood 開催場コード（実績ベース）
+KEIBABLOOD_CODE = {
+  "門別": "30",
+  "盛岡": "35",
+  "水沢": "36",
+  "浦和": "42",
+  "船橋": "43",
+  "大井": "44",
+  "川崎": "45",
+  "金沢": "46",
+  "笠松": "47",
+  "名古屋": "48",
+  "園田": "50",
+  "姫路": "51",
+  "高知": "54",
+  "佐賀": "55",
+}
+
 def fetch(url: str) -> str:
     r = requests.get(url, headers=UA, timeout=25)
     if r.status_code != 200:
@@ -33,7 +50,69 @@ def fetch(url: str) -> str:
     r.encoding = r.apparent_encoding
     return r.text
 
+def detect_active_tracks_keibago(yyyymmdd: str):
+    active = []
+    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
+    for track, baba in BABA_CODE.items():
+        url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_babaCode={baba}&k_raceDate={date_slash}"
+        html = fetch(url)
+        if html and ("1R" in html):
+            active.append(track)
+        time.sleep(0.08)
+    return active
+
+def parse_keibablood_tables_top5(html: str):
+    """
+    keibablood の指数表からレースごとの上位5頭（馬番/馬名/指数）を作る
+    """
+    soup = BeautifulSoup(html, "lxml")
+    races = {}
+    for t in soup.find_all("table"):
+        head = t.find("tr")
+        if not head:
+            continue
+        headers = [c.get_text(" ", strip=True) for c in head.find_all(["th","td"])]
+        hj = " ".join(headers)
+        if not (("指数" in hj) and ("馬名" in hj) and ("番" in hj)):
+            continue
+
+        def idx(k):
+            for i,h in enumerate(headers):
+                if k in h:
+                    return i
+            return None
+
+        i_ban, i_name, i_idx = idx("番"), idx("馬名"), idx("指数")
+        if None in (i_ban, i_name, i_idx):
+            continue
+
+        rno = len(races) + 1
+        rows = []
+        for tr in t.find_all("tr")[1:]:
+            cells = tr.find_all(["td","th"])
+            if not cells:
+                continue
+            vals = [c.get_text(" ", strip=True) for c in cells]
+            if len(vals) <= max(i_ban, i_name, i_idx):
+                continue
+            mban = re.search(r"\d+", vals[i_ban])
+            midx = re.search(r"[\d.]+", vals[i_idx])
+            if not (mban and midx):
+                continue
+            rows.append({
+                "umaban": int(mban.group()),
+                "name": vals[i_name].strip(),
+                "idx": float(midx.group()),
+            })
+        if rows:
+            rows.sort(key=lambda x:(-x["idx"], x["umaban"]))
+            races[rno] = rows[:5]
+    return races
+
 def parse_top3_from_racemark(html_text: str):
+    """
+    keiba.go.jp RaceMarkTable から上位3頭（着順/馬番/馬名）を拾う
+    """
     soup = BeautifulSoup(html_text, "lxml")
     top = []
     for tr in soup.find_all("tr"):
@@ -55,31 +134,10 @@ def parse_top3_from_racemark(html_text: str):
 
         if not name:
             continue
-        top.append({"pos": int(pos), "umaban": umaban, "name": name})
+        top.append({"rank": int(pos), "umaban": umaban, "name": name})
         if len(top) >= 3:
             break
     return top
-
-def parse_race_names_from_racelist(html_text: str):
-    soup = BeautifulSoup(html_text, "lxml")
-    m = {}
-    for tr in soup.find_all("tr"):
-        row_txt = tr.get_text(" ", strip=True)
-        mo = re.search(r"(\d{1,2})R", row_txt)
-        if not mo:
-            continue
-        rn = int(mo.group(1))
-        a = tr.find("a")
-        if not a:
-            continue
-        name = a.get_text(strip=True)
-        if not name:
-            continue
-        if any(x in name for x in ["オッズ","映像","成績","払戻","当日メニュー"]):
-            continue
-        if rn not in m:
-            m[rn] = name
-    return m
 
 def esc(s):
     import html
@@ -104,8 +162,13 @@ def section_title(left: str, right_badge: str, bg: str) -> str:
             f"{right_badge}"
             f"</div>")
 
-def build_result_html(track: str, yyyymmdd: str, races: list, race_names: dict, babaCode: int):
-    # タイトル（あなた指定フォーマット）
+def build_result_html(track: str, yyyymmdd: str, races_block: list, baba: int):
+    """
+    races_block:
+      [
+        { race_no: int, top5:[...], top3:[...] or None }
+      ]
+    """
     title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 結果"
 
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
@@ -114,36 +177,36 @@ def build_result_html(track: str, yyyymmdd: str, races: list, race_names: dict, 
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
     parts.append(f"<h2 style='margin:10px 0 10px;'>{esc(title)}</h2>")
 
-    for r in races:
-        rno = int(r.get("race_no"))
-        pred = r.get("pred_top5", [])[:5]
+    for r in races_block:
+        rno = int(r["race_no"])
+        top5 = r.get("top5", [])[:5]
+        top3 = r.get("top3", None)  # None or list
+
+        pred = []
+        for i, h in enumerate(top5):
+            pred.append({
+                "mark": MARKS[i],
+                "umaban": int(h["umaban"]),
+                "name": str(h["name"]),
+                "idx": float(h["idx"]),
+            })
         pred_by_umaban = {x["umaban"]: x for x in pred}
 
-        # 結果上位3
-        url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode={babaCode}&k_raceDate={date_slash}&k_raceNo={rno}"
-        html_rm = fetch(url)
-        top3 = parse_top3_from_racemark(html_rm) if html_rm else []
-        pos_by_umaban = {x["umaban"]: x["pos"] for x in top3}
-
-        # レース名は“あってもいい”けど、無くてもOK（今回は出してOKにしてる）
-        rname = race_names.get(rno, "")
-        head = f"{rno}R" + (f" {rname}" if rname else "")
-
+        # カード枠
         parts.append(
             "<div style='margin:16px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
         )
 
-        # 見出し（RESULT/PREDは残す：結果ページの見やすさのため）
+        # 見出し（結果だけ）
+        head = f"{rno}R"
         parts.append(
             "<div style='display:flex;align-items:baseline;gap:10px;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
-            f"{badge('結果', '#fee2e2')}"
-            f"{badge('予想', '#dbeafe')}"
             "</div>"
         )
 
-        # --- 結果（赤） ---
+        # --- 結果セクション（赤系） ---
         parts.append(section_title("結果（1〜3着）", badge("RESULT", "#fecaca"), "#fff1f2"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;margin-bottom:10px;'>")
@@ -156,18 +219,19 @@ def build_result_html(track: str, yyyymmdd: str, races: list, race_names: dict, 
             "<th style='border-bottom:2px solid #991b1b;padding:8px;text-align:right;white-space:nowrap;'>予想指数</th>"
             "</tr></thead><tbody>"
         )
-        if top3:
+
+        if isinstance(top3, list) and top3:
             for x in top3:
-                u = x["umaban"]
+                u = int(x["umaban"])
                 nm = x["name"]
                 p = pred_by_umaban.get(u)
                 mark = p["mark"] if p else "—"
-                idx = p["idx"] if p else None
-                idx_txt = f"{idx:.2f}" if isinstance(idx,(int,float)) else "—"
-                col = idx_color(idx) if isinstance(idx,(int,float)) else "#374151"
+                idxv = p["idx"] if p else None
+                idx_txt = f"{idxv:.2f}" if isinstance(idxv,(int,float)) else "—"
+                col = idx_color(idxv) if isinstance(idxv,(int,float)) else "#374151"
                 parts.append(
                     "<tr>"
-                    f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:center;font-weight:900;'>{x['pos']}</td>"
+                    f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:center;font-weight:900;'>{x['rank']}</td>"
                     f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:center;'>{u}</td>"
                     f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:left;font-weight:750;'>{esc(nm)}</td>"
                     f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:center;font-weight:900;'>{esc(mark)}</td>"
@@ -176,10 +240,11 @@ def build_result_html(track: str, yyyymmdd: str, races: list, race_names: dict, 
                 )
         else:
             parts.append("<tr><td colspan='5' style='padding:10px;color:#6b7280;'>結果取得できませんでした</td></tr>")
+
         parts.append("</tbody></table></div>")
 
-        # --- 予想（青） ---
-        parts.append(section_title("予想（指数上位5）", badge("PRED", "#bfdbfe"), "#eff6ff"))
+        # --- 予想セクション（青系） ---
+        parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;'>")
         parts.append(
@@ -188,95 +253,97 @@ def build_result_html(track: str, yyyymmdd: str, races: list, race_names: dict, 
             "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>馬番</th>"
             "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:left;'>馬名</th>"
             "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:right;white-space:nowrap;'>指数</th>"
-            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>結果</th>"
             "</tr></thead><tbody>"
         )
         for i, p in enumerate(pred):
             bg = "#ffffff" if i % 2 == 0 else "#f8fafc"
-            pos = pos_by_umaban.get(p["umaban"])
-            pos_txt = f"{pos}着" if pos else "—"
             parts.append(
                 f"<tr style='background:{bg};'>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(p['mark'])}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;'>{p['umaban']}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-variant-numeric:tabular-nums;'>{p['umaban']}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:left;font-weight:750;'>{esc(p['name'])}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;font-weight:900;color:{idx_color(p['idx'])};'>{p['idx']:.2f}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(pos_txt)}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;font-weight:900;color:{idx_color(p['idx'])};font-variant-numeric:tabular-nums;'>{p['idx']:.2f}</td>"
                 f"</tr>"
             )
         parts.append("</tbody></table></div>")
 
         parts.append("</div>")  # card end
-        time.sleep(0.08)
+        time.sleep(0.05)
 
     parts.append("</div>")
     return title, "\n".join(parts)
 
 def main():
-    # DATE は env があればそれ、なければ今日
-    today = datetime.now().strftime("%Y%m%d")
-    yyyymmdd = os.environ.get("DATE", today)
-
+    yyyymmdd = os.environ.get("DATE") or datetime.now().strftime("%Y%m%d")
     os.makedirs("output", exist_ok=True)
 
-    # 今日の予想json（全場）を読む
-    pred_jsons = sorted(Path("output").glob(f"predict_{yyyymmdd}_*.json"))
-    if not pred_jsons:
-        raise RuntimeError(f"output に predict_{yyyymmdd}_*.json がありません（先に予想生成してください）")
+    active = detect_active_tracks_keibago(yyyymmdd)
+    print(f"[INFO] active_tracks = {active}")
 
-    made = 0
-    for p in pred_jsons:
-        d = json.loads(p.read_text(encoding="utf-8"))
-        track = d.get("place") or ""
-        place_code = str(d.get("place_code") or "")
+    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
 
-        babaCode = BABA_CODE.get(track)
-        if not babaCode:
-            print(f"[SKIP] {track}: keiba.go.jp babaCode 不明")
+    for track in active:
+        baba = BABA_CODE.get(track)
+        code = KEIBABLOOD_CODE.get(track)
+        if not baba or not code:
+            print(f"[SKIP] {track}: code missing")
             continue
 
-        date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
+        # keibablood の「その日その場」のページを探す（-1..-12）
+        kb_races = None
+        kb_url_used = None
+        for i in range(1, 13):
+            kb_url = f"https://keibablood.com/{yyyymmdd}{code}-{i}/"
+            kb_html = fetch(kb_url)
+            if not kb_html:
+                continue
+            races = parse_keibablood_tables_top5(kb_html)
+            if races:
+                kb_races = races
+                kb_url_used = kb_url
+                break
 
-        # レース名（まとめて）
-        racelist_url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_babaCode={babaCode}&k_raceDate={date_slash}"
-        rl_html = fetch(racelist_url)
-        race_names = parse_race_names_from_racelist(rl_html) if rl_html else {}
+        if not kb_races:
+            print(f"[SKIP] {track}: keibablood 未発見")
+            continue
 
-        # 予想 top5 を作る（result用に整形）
-        races = []
-        for race in d.get("predictions", []):
-            rno = int(race["race_no"])
-            picks = race["picks"][:5]
-            pred_top5 = []
-            for x in picks:
-                pred_top5.append({
-                    "mark": x.get("mark",""),
-                    "umaban": int(x.get("umaban", 0)),
-                    "name": str(x.get("name","")),
-                    "idx": float(x.get("score", 0.0)),
-                })
-            races.append({"race_no": rno, "pred_top5": pred_top5})
+        races_block = []
+        for rno in sorted(kb_races.keys()):
+            top5 = kb_races[rno]
 
-        title, html = build_result_html(track, yyyymmdd, races, race_names, babaCode)
+            # keiba.go.jp 結果（上位3）
+            rm_url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={rno}"
+            rm_html = fetch(rm_url)
+            top3 = parse_top3_from_racemark(rm_html) if rm_html else None
 
-        out_json = Path("output") / f"result_{yyyymmdd}_{place_code}.json"
-        out_html = Path("output") / f"result_{yyyymmdd}_{place_code}.html"
+            races_block.append({
+                "race_no": rno,
+                "top5": top5,
+                "top3": top3,
+            })
 
-        out_json.write_text(json.dumps({
+            time.sleep(0.08)
+
+        title, html = build_result_html(track, yyyymmdd, races_block, baba)
+
+        out = {
             "date": yyyymmdd,
             "place": track,
-            "place_code": place_code,
+            "place_code": code,
             "title": title,
-            "races": races,
+            "races": races_block,
+            "source": {
+                "keibablood_url": kb_url_used,
+                "keiba_gojp": "RaceMarkTable"
+            },
             "generated_at": datetime.now().isoformat(timespec="seconds")
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        }
 
-        out_html.write_text(html, encoding="utf-8")
-
-        print(f"[OK] {track} saved -> {out_html.name}")
-        made += 1
-
-    print(f"=== DONE result: tracks={made} ===")
+        json_path = Path("output") / f"result_{yyyymmdd}_{code}.json"
+        html_path = Path("output") / f"result_{yyyymmdd}_{code}.html"
+        json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        html_path.write_text(html, encoding="utf-8")
+        print(f"[OK] {track} -> {json_path.name} / {html_path.name}")
 
 if __name__ == "__main__":
     main()
