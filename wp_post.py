@@ -1,48 +1,24 @@
 ﻿import os
-import json
 import requests
 
-WP_BASE = os.environ["WP_BASE"]          # https://fieldnote-lab.jp
+WP_BASE = os.environ["WP_BASE"]
 WP_USER = os.environ["WP_USER"]
 WP_APP_PASSWORD = os.environ["WP_APP_PASSWORD"]
 
-def wp_create_post(title: str, html: str, status: str = "publish"):
-    url = f"{WP_BASE.rstrip('/')}/wp-json/wp/v2/posts"
-    r = requests.post(
-        url,
-        auth=(WP_USER, WP_APP_PASSWORD),
-        json={"title": title, "content": html, "status": status},
-        timeout=30,
-    )
-
-    if r.status_code >= 400:
-        print("[HTTP ERROR]", r.status_code)
-        print("[URL]", url)
-        print("[RESPONSE HEADERS]", dict(r.headers))
-        try:
-            print("[RESPONSE JSON]", r.json())
-        except Exception:
-            print("[RESPONSE TEXT]", r.text[:2000])
-        r.raise_for_status()
-
-    return r.json()
-
 def main():
-    files = [f for f in os.listdir("output") if f.startswith("predict_") and f.endswith(".json")]
-    files.sort()
-    if not files:
-        raise SystemExit("outputにpredict_*.jsonがありません")
+    # 認証なしで叩けるはずのエンドポイント（WPが返すJSONが見たい）
+    url1 = f"{WP_BASE.rstrip('/')}/wp-json/"
+    r1 = requests.get(url1, timeout=30)
+    print("[GET]", url1, "status=", r1.status_code)
+    print(r1.text[:500])
 
-    json_path = os.path.join("output", files[-1])
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    # 認証が通るか（ユーザー情報。ここがJSONで返ればOK）
+    url2 = f"{WP_BASE.rstrip('/')}/wp-json/wp/v2/users/me"
+    r2 = requests.get(url2, auth=(WP_USER, WP_APP_PASSWORD), timeout=30)
+    print("[GET]", url2, "status=", r2.status_code)
+    print(r2.text[:500])
 
-    html_path = json_path.replace(".json", ".html")
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
-
-    res = wp_create_post(data["title"], html, status="publish")
-    print("Posted:", res.get("link"))
+    r2.raise_for_status()
 
 if __name__ == "__main__":
     main()
