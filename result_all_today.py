@@ -284,8 +284,6 @@ def render_result_html(title: str, races_out) -> str:
         parts.append(
             "<div style='display:flex;align-items:baseline;gap:10px;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
-            f"{badge('結果', '#fee2e2')}"
-            f"{badge('予想', '#dbeafe')}"
             "</div>"
         )
 
