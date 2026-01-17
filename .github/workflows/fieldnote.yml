@@ -79,3 +79,5 @@ jobs:
         if: steps.mode.outputs.MODE == 'result'
         run: |
           MODE=result python wp_post.py
+      - name: Set DATE (JST)
+        run: echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
