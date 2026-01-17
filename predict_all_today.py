@@ -158,7 +158,7 @@ def render_html(title: str, preds) -> str:
         )
 
         # 予想の文字は出さない（あなたの指定）
-        parts.append(section_title("指数上位5", badge("PRED", "#bfdbfe"), "#eff6ff"))
+        parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;'>")
         parts.append(
