@@ -26,23 +26,24 @@ BABA_CODE = {
   "佐賀": 32,
 }
 
-# keibablood の「開催場コード（末尾2桁）」用（だいたい keiba.go.jp と同じ数字でOK）
-PLACE_CODE = {
-  "帯広": "03",
-  "門別": "36",
-  "盛岡": "10",
-  "水沢": "11",
-  "浦和": "18",
-  "船橋": "19",
-  "大井": "20",
-  "川崎": "21",
-  "金沢": "22",
-  "笠松": "23",
-  "名古屋": "24",
-  "園田": "27",
-  "姫路": "28",
-  "高知": "31",
-  "佐賀": "32",
+# ★keibablood の開催場コード（あなたが貼ってくれた実績ベース）
+# 例: 佐賀=55 / 大井=44 / 名古屋=48 ...
+KEIBABLOOD_CODE = {
+  "浦和": "42",
+  "船橋": "43",
+  "大井": "44",
+  "川崎": "45",
+  "金沢": "46",
+  "笠松": "47",
+  "名古屋": "48",
+  "園田": "50",
+  "姫路": "51",
+  "高知": "54",
+  "佐賀": "55",
+  "水沢": "36",
+  "門別": "30",
+  "盛岡": "35",
+  # "帯広": "??",  # 未確認。分かったら足す
 }
 
 def fetch(url: str) -> str:
@@ -53,20 +54,17 @@ def fetch(url: str) -> str:
     return r.text
 
 def detect_active_tracks_keibago(yyyymmdd: str):
-    """
-    keiba.go.jp RaceList を叩いて「今日開催してる場だけ」を返す
-    （未開催なら RaceList が空/エラーになりやすい）
-    """
+    """keiba.go.jp RaceList を叩いて今日開催してる場だけ返す"""
     active = []
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
 
     for track, baba in BABA_CODE.items():
         url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_babaCode={baba}&k_raceDate={date_slash}"
         html = fetch(url)
-        # ざっくり判定：ページ内に「1R」が無ければ未開催扱い
-        if html and re.search(r"\b1R\b", html):
+        # ゆるめ判定：'1R' が含まれてたら開催扱い
+        if html and ("1R" in html):
             active.append(track)
-        time.sleep(0.08)  # 念のため
+        time.sleep(0.08)
     return active
 
 def parse_keibablood_tables(html: str):
@@ -78,8 +76,11 @@ def parse_keibablood_tables(html: str):
         first = t.find("tr")
         if not first:
             continue
+
         headers = [c.get_text(" ", strip=True) for c in first.find_all(["th","td"])]
         hj = " ".join(headers)
+
+        # ざっくり「指数」「馬名」「番」が揃ってる表だけ拾う
         if not (("指数" in hj) and ("馬名" in hj) and ("番" in hj)):
             continue
 
@@ -117,7 +118,6 @@ def parse_keibablood_tables(html: str):
             })
 
         if rows:
-            # 上位5
             rows.sort(key=lambda x: (-x["score"], x["umaban"]))
             races[race_no] = rows[:5]
 
@@ -127,7 +127,6 @@ def main():
     yyyymmdd = os.environ.get("DATE") or datetime.now().strftime("%Y%m%d")
     os.makedirs("output", exist_ok=True)
 
-    # ★高速化：まず開催場だけ絞る（ここが本体）
     active_tracks = detect_active_tracks_keibago(yyyymmdd)
     print(f"[INFO] active_tracks = {active_tracks}")
 
@@ -136,13 +135,12 @@ def main():
         return
 
     for track in active_tracks:
-        code = PLACE_CODE.get(track)
+        code = KEIBABLOOD_CODE.get(track)
         if not code:
-            print(f"[SKIP] {track}: code unknown")
+            print(f"[SKIP] {track}: keibablood code unknown")
             continue
 
         found = False
-        # keibablood を探す（-1 ～ -12）
         for idx in range(1, 13):
             url = f"https://keibablood.com/{yyyymmdd}{code}-{idx}/"
             html = fetch(url)
