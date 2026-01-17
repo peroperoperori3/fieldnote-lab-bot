@@ -260,10 +260,8 @@ def render_html(title: str, preds) -> str:
         parts.append(
             "<div style='display:flex;align-items:baseline;gap:10px;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
-            f"{badge('予想', '#dbeafe')}"
             "</div>"
         )
-
 
         # --- 予想セクション（青系） ---
         parts.append(section_title("予想（指数上位5）", badge("PRED", "#bfdbfe"), "#eff6ff"))
