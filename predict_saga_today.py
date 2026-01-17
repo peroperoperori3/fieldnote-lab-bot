@@ -211,76 +211,94 @@ def render_text(title: str, preds) -> str:
     return "\n".join(lines)
 
 def render_html(title: str, preds) -> str:
-    # keiba_kesaki_bot の予想HTMLに寄せた（インラインstyle中心）
-    # - 見出し h2 / h3
-    # - テーブル：太めの見出し下線 + 交互行
-    # - 指数セル：80/70/60で色分け（背景ちょい）
+    # ★装飾だけ変更（keiba_kesaki_bot風：カード＋バッジ＋セクション）
     import html as _html
 
+    def esc(s):
+        return _html.escape(str(s))
+
+    def idx_color(v: float) -> str:
+        # 貼ってくれたやつと同じ5段階
+        if v >= 75: return "#b91c1c"  # 赤
+        if v >= 68: return "#c2410c"  # 橙
+        if v >= 60: return "#1d4ed8"  # 青
+        if v >= 55: return "#0f766e"  # 緑
+        return "#374151"              # グレー
+
+    def badge(text: str, bg: str, fg: str = "#111827") -> str:
+        return (
+            "<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
+            f"background:{bg};color:{fg};font-weight:900;font-size:12px;letter-spacing:.02em;'>"
+            f"{esc(text)}</span>"
+        )
+
+    def section_title(left: str, right_badge: str, bg: str) -> str:
+        return (
+            "<div style='display:flex;align-items:center;justify-content:space-between;"
+            f"padding:10px 12px;border-radius:12px;background:{bg};margin:10px 0 8px;'>"
+            f"<strong style='font-size:14px;'>{esc(left)}</strong>"
+            f"{right_badge}"
+            "</div>"
+        )
+
     parts = []
-    parts.append(f"<h2>{_html.escape(title)}</h2>")
+    parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
+    parts.append(f"<h2 style='margin:10px 0 10px;'>{esc(title)}</h2>")
+    parts.append(
+        "<div style='margin:0 0 16px;color:#6b7280;'>"
+        f"取得元：<span style='font-weight:700;'>keibablood</span>（指数） / "
+        f"<span style='font-weight:700;'>kaisekisya</span>（騎手成績）"
+        "</div>"
+    )
 
     for race in preds:
-        rno = race["race_no"]
-        parts.append(f"<h3>{rno}R</h3>")
+        rno = int(race["race_no"])
+        picks = race["picks"]  # 上位5（mark, umaban, name, score）
 
-        picks = race["picks"]  # 5頭
-
-        parts.append('<table style="width:100%;border-collapse:collapse;">')
+        # カード枠（レース単位）
         parts.append(
-            '<thead><tr>'
-            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:center;white-space:nowrap;">印</th>'
-            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:center;white-space:nowrap;">馬番</th>'
-            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:left;">馬名</th>'
-            '<th style="border-bottom:2px solid #111827;padding:8px;text-align:right;white-space:nowrap;">指数</th>'
-            '</tr></thead><tbody>'
+            "<div style='margin:16px 0 18px;padding:12px 12px;"
+            "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
+        )
+
+        # 見出し（大きく）※レース名は出さない
+        head = f"{rno}R"
+        parts.append(
+            "<div style='display:flex;align-items:baseline;gap:10px;'>"
+            f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
+            f"{badge('予想', '#dbeafe')}"
+            "</div>"
+        )
+
+        # --- 予想セクション（青系） ---
+        parts.append(section_title("予想（指数上位5）", badge("PRED", "#bfdbfe"), "#eff6ff"))
+        parts.append("<div style='overflow-x:auto;'>")
+        parts.append("<table style='width:100%;border-collapse:collapse;'>")
+        parts.append(
+            "<thead><tr>"
+            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>印</th>"
+            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>馬番</th>"
+            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:left;'>馬名</th>"
+            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:right;white-space:nowrap;'>指数</th>"
+            "</tr></thead><tbody>"
         )
 
         for i, p in enumerate(picks):
-            mark = str(p.get("mark", ""))
-            umaban = str(p.get("umaban", ""))
-            name = str(p.get("name", ""))
-            score = p.get("score", 0)
-
-            try:
-                sc = float(score)
-            except:
-                sc = 0.0
-
-            rowbg = "#ffffff" if i % 2 == 0 else "#f8fafc"
-
-            # 指数セルだけ色（keiba_kesaki_botと同じ思想）
-            if sc >= 80:
-                cellbg = "#fee2e2"   # 赤薄
-            elif sc >= 70:
-                cellbg = "#fff7ed"   # オレンジ薄
-            elif sc >= 60:
-                cellbg = "#fefce8"   # 黄薄
-            else:
-                cellbg = rowbg
-
-            parts.append("<tr>")
+            bg = "#ffffff" if i % 2 == 0 else "#f8fafc"
+            sc = float(p.get("score", 0.0))
             parts.append(
-                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;background:{rowbg};font-weight:800;">'
-                f'{_html.escape(mark)}</td>'
+                f"<tr style='background:{bg};'>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(p.get('mark',''))}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-variant-numeric:tabular-nums;'>{int(p.get('umaban',0))}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:left;font-weight:750;'>{esc(p.get('name',''))}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;font-weight:900;color:{idx_color(sc)};font-variant-numeric:tabular-nums;'>{sc:.2f}</td>"
+                f"</tr>"
             )
-            parts.append(
-                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center;background:{rowbg};font-variant-numeric:tabular-nums;">'
-                f'{_html.escape(umaban)}</td>'
-            )
-            parts.append(
-                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;background:{rowbg};font-weight:700;">'
-                f'{_html.escape(name)}</td>'
-            )
-            parts.append(
-                f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;background:{cellbg};font-variant-numeric:tabular-nums;font-weight:800;">'
-                f'{sc:.2f}</td>'
-            )
-            parts.append("</tr>")
 
-        parts.append("</tbody></table>")
-        parts.append('<hr style="margin:18px 0;border:none;border-top:1px solid #e5e7eb;">')
+        parts.append("</tbody></table></div>")
+        parts.append("</div>")  # card end
 
+    parts.append("</div>")  # wrap end
     return "\n".join(parts)
 
 def main():
