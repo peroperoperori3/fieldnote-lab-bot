@@ -244,12 +244,6 @@ def render_html(title: str, preds) -> str:
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
     parts.append(f"<h2 style='margin:10px 0 10px;'>{esc(title)}</h2>")
-    parts.append(
-        "<div style='margin:0 0 16px;color:#6b7280;'>"
-        f"取得元：<span style='font-weight:700;'>keibablood</span>（指数） / "
-        f"<span style='font-weight:700;'>kaisekisya</span>（騎手成績）"
-        "</div>"
-    )
 
     for race in preds:
         rno = int(race["race_no"])
@@ -269,6 +263,7 @@ def render_html(title: str, preds) -> str:
             f"{badge('予想', '#dbeafe')}"
             "</div>"
         )
+
 
         # --- 予想セクション（青系） ---
         parts.append(section_title("予想（指数上位5）", badge("PRED", "#bfdbfe"), "#eff6ff"))
