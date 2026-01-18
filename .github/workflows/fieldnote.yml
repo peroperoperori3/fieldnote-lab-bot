@@ -1,4 +1,4 @@
-﻿name: fieldnote auto post (predict/result)
+name: fieldnote auto post (predict/result)
 
 on:
   schedule:
@@ -22,11 +22,13 @@ jobs:
       WP_POST_STATUS: ${{ secrets.WP_POST_STATUS }}
 
     steps:
-      # ★ ここでDATEを1回だけセット（これ以外いらない）
+      # DATEは1回だけ（JSTの当日）
       - name: Set DATE (JST)
+        shell: bash
         run: echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
 
       - name: Debug DATE
+        shell: bash
         run: echo "DATE=$DATE"
 
       - name: Checkout
@@ -47,25 +49,36 @@ jobs:
           rm -rf output
           mkdir -p output
 
+      # ★ここが重要：時間ではなく「起動したcron文字列」でMODEを確定（ズレに強い）
       - name: Decide MODE
         id: mode
         shell: bash
         run: |
+          # 手動実行は inputs.mode を優先
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "MODE=${{ inputs.mode }}" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          HOUR=$(date -u +%H)
-          MIN=$(date -u +%M)
-
-          if [ "$HOUR" = "21" ] && [ "$MIN" = "00" ]; then
-            echo "MODE=predict" >> $GITHUB_OUTPUT
-          elif [ "$HOUR" = "14" ] && [ "$MIN" = "00" ]; then
-            echo "MODE=result" >> $GITHUB_OUTPUT
-          else
-            echo "MODE=predict" >> $GITHUB_OUTPUT
+          # schedule 実行は、どのcronで起動したかで確定
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "SCHEDULE=${{ github.event.schedule }}"
+            if [ "${{ github.event.schedule }}" = "0 21 * * *" ]; then
+              echo "MODE=predict" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            if [ "${{ github.event.schedule }}" = "0 14 * * *" ]; then
+              echo "MODE=result" >> $GITHUB_OUTPUT
+              exit 0
+            fi
           fi
+
+          # 想定外は predict（保険）
+          echo "MODE=predict" >> $GITHUB_OUTPUT
+
+      - name: Debug MODE
+        shell: bash
+        run: echo "MODE=${{ steps.mode.outputs.MODE }}"
 
       - name: Run predict (generate output for all tracks)
         if: steps.mode.outputs.MODE == 'predict'
