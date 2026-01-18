@@ -1,4 +1,4 @@
-﻿import os, json, glob
+import os, json, glob
 import requests
 
 WP_BASE = os.environ["WP_BASE"].rstrip("/")
@@ -14,13 +14,34 @@ def wp_request(method, path, **kwargs):
     auth = (WP_USER, WP_APP_PASSWORD)
     return requests.request(method, url, auth=auth, timeout=30, **kwargs)
 
-def upsert_post(slug: str, title: str, html: str, status: str):
+# ==========================
+# ① カテゴリIDを自動取得（安全版） ← ここに追加
+# ==========================
+def get_category_id_by_name(name: str):
+    # name 完全一致で探す（日本語カテゴリ名でもOK）
+    r = wp_request("GET", "/wp-json/wp/v2/categories", params={"search": name, "per_page": 100})
+    if r.status_code != 200:
+        print(f"[WARN] categories search failed: {r.status_code}")
+        return None
+    items = r.json()
+    for it in items:
+        if it.get("name") == name:
+            return it.get("id")
+    return None
+
+def upsert_post(slug: str, title: str, html: str, status: str, category_id=None):
     # 既存検索（slug一致）
     r = wp_request("GET", "/wp-json/wp/v2/posts", params={"slug": slug, "per_page": 1})
     r.raise_for_status()
     items = r.json()
 
     payload = {"title": title, "content": html, "status": status, "slug": slug}
+
+    # ==========================
+    # ③ WordPressに投げる data に1行追加 ← ここ
+    # ==========================
+    if category_id:
+        payload["categories"] = [int(category_id)]
 
     if items:
         post_id = items[0]["id"]
@@ -47,6 +68,17 @@ def main():
 
     print(f"[DEBUG] files = {files}")
 
+    # ==========================
+    # ② MODE に応じてカテゴリを決める ← main() の中で、投稿ループの前に追加
+    # ==========================
+    if MODE == "predict":
+        category_name = "競馬予想"
+    else:
+        category_name = "競馬結果"
+
+    category_id = get_category_id_by_name(category_name)
+    print(f"[DEBUG] category_name={category_name} category_id={category_id}")
+
     # 全部投稿（開催場ぶん）
     for json_path in files:
         data = json.load(open(json_path, encoding="utf-8"))
@@ -66,7 +98,7 @@ def main():
         print(f"[DEBUG] json_path = {json_path}")
         print(f"[DEBUG] slug = {slug}")
 
-        action, link = upsert_post(slug, title, html, WP_POST_STATUS)
+        action, link = upsert_post(slug, title, html, WP_POST_STATUS, category_id=category_id)
         print(f"OK: {action}")
         print(f"Posted: {link}")
 
