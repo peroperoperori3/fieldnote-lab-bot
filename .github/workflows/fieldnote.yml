@@ -3,7 +3,7 @@ name: fieldnote auto post (predict/result)
 on:
   schedule:
     - cron: "0 21 * * *"  # JST 06:00（予想）
-    - cron: "0 14 * * *"  # JST 23:00（結果）
+    - cron: "0 13 * * *"  # JST 22:00（結果）
   workflow_dispatch:
     inputs:
       mode:
@@ -49,7 +49,7 @@ jobs:
           rm -rf output
           mkdir -p output
 
-      # ★ここが重要：時間ではなく「起動したcron文字列」でMODEを確定（ズレに強い）
+      # ★ 起動した cron 文字列で MODE を確定
       - name: Decide MODE
         id: mode
         shell: bash
@@ -67,7 +67,7 @@ jobs:
               echo "MODE=predict" >> $GITHUB_OUTPUT
               exit 0
             fi
-            if [ "${{ github.event.schedule }}" = "0 14 * * *" ]; then
+            if [ "${{ github.event.schedule }}" = "0 13 * * *" ]; then
               echo "MODE=result" >> $GITHUB_OUTPUT
               exit 0
             fi
