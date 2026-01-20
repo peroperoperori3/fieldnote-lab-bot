@@ -15,92 +15,103 @@ def wp_request(method, path, **kwargs):
     return requests.request(method, url, auth=auth, timeout=30, **kwargs)
 
 # ==========================
-# ① カテゴリIDを自動取得（安全版） ← ここに追加
+# カテゴリIDを自動取得（安全版）
 # ==========================
 def get_category_id_by_name(name: str):
-    # name 完全一致で探す（日本語カテゴリ名でもOK）
-    r = wp_request("GET", "/wp-json/wp/v2/categories", params={"search": name, "per_page": 100})
+    r = wp_request(
+        "GET",
+        "/wp-json/wp/v2/categories",
+        params={"search": name, "per_page": 100},
+    )
     if r.status_code != 200:
         print(f"[WARN] categories search failed: {r.status_code}")
         return None
-    items = r.json()
-    for it in items:
+    for it in r.json():
         if it.get("name") == name:
             return it.get("id")
     return None
 
-def upsert_post(slug: str, title: str, html: str, status: str, category_id=None):
-    # 既存検索（slug一致）
+# ==========================
+# 投稿（既存があればスキップ）
+# ==========================
+def create_post_if_not_exists(slug: str, title: str, html: str, status: str, category_id=None):
+    # slug一致で既存確認
     r = wp_request("GET", "/wp-json/wp/v2/posts", params={"slug": slug, "per_page": 1})
     r.raise_for_status()
     items = r.json()
 
-    payload = {"title": title, "content": html, "status": status, "slug": slug}
+    if items:
+        post_id = items[0].get("id")
+        link = items[0].get("link")
+        print(f"[SKIP] already exists: id={post_id} slug={slug}")
+        return "skipped", link
 
-    # ==========================
-    # ③ WordPressに投げる data に1行追加 ← ここ
-    # ==========================
+    payload = {
+        "title": title,
+        "content": html,
+        "status": status,
+        "slug": slug,
+    }
+
     if category_id:
         payload["categories"] = [int(category_id)]
 
-    if items:
-        post_id = items[0]["id"]
-        u = wp_request("POST", f"/wp-json/wp/v2/posts/{post_id}", json=payload)
-        u.raise_for_status()
-        return "updated", u.json().get("link")
-    else:
-        c = wp_request("POST", "/wp-json/wp/v2/posts", json=payload)
-        c.raise_for_status()
-        return "created", c.json().get("link")
+    c = wp_request("POST", "/wp-json/wp/v2/posts", json=payload)
+    c.raise_for_status()
+    return "created", c.json().get("link")
 
 def main():
     # MODEで対象ファイルを決める
     if MODE == "predict":
         prefix = "predict_"
         slug_prefix = "predict"
+        category_name = "競馬予想"
     else:
         prefix = "result_"
         slug_prefix = "result"
+        category_name = "競馬結果"
 
     files = sorted(glob.glob(f"output/{prefix}*.json"))
     if not files:
-        raise RuntimeError(f"output に {prefix}*.json が見つかりません")
+        print(f"[SKIP] output に {prefix}*.json が見つかりません（まだデータが出てないので終了）")
+        return
 
     print(f"[DEBUG] files = {files}")
-
-    # ==========================
-    # ② MODE に応じてカテゴリを決める ← main() の中で、投稿ループの前に追加
-    # ==========================
-    if MODE == "predict":
-        category_name = "競馬予想"
-    else:
-        category_name = "競馬結果"
 
     category_id = get_category_id_by_name(category_name)
     print(f"[DEBUG] category_name={category_name} category_id={category_id}")
 
     # 全部投稿（開催場ぶん）
     for json_path in files:
-        data = json.load(open(json_path, encoding="utf-8"))
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
 
-        date = data.get("date")  # yyyymmdd
-        place = data.get("place") or data.get("track")  # 念のため両対応
+        date = data.get("date")              # yyyymmdd
+        place = data.get("place") or data.get("track")
         place_code = data.get("place_code") or ""
 
-        # htmlは同名ファイルを読む
         html_path = json_path.replace(".json", ".html")
-        html = open(html_path, encoding="utf-8").read()
+        with open(html_path, encoding="utf-8") as f:
+            html = f.read()
 
-        # slugを日付+開催場で固定（=1日1場1記事）
+        # 1日1場1記事で固定
         slug = f"{slug_prefix}-{date}-{place_code}"
         title = data.get("title") or f"{date} {place} {MODE}"
 
         print(f"[DEBUG] json_path = {json_path}")
         print(f"[DEBUG] slug = {slug}")
+        print(f"[DEBUG] title = {title}")
 
-        action, link = upsert_post(slug, title, html, WP_POST_STATUS, category_id=category_id)
+        action, link = create_post_if_not_exists(
+            slug=slug,
+            title=title,
+            html=html,
+            status=WP_POST_STATUS,
+            category_id=category_id,
+        )
         print(f"OK: {action}")
-        print(f"Posted: {link}")
+        if link:
+            print(f"Link: {link}")
 
 if __name__ == "__main__":
     main()
