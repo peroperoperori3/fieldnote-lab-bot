@@ -1,4 +1,4 @@
-﻿import os, re, json, time
+import os, re, json, time
 from datetime import datetime
 from pathlib import Path
 import requests
@@ -61,21 +61,34 @@ KAISEKISYA_JOCKEY_URL = {
   "佐賀": "https://www.kaisekisya.net/local/jockey/saga.html",
 }
 
-def fetch(url: str) -> str:
-    r = requests.get(url, headers=UA, timeout=25)
+def fetch(url: str, debug=False) -> str:
+    try:
+        r = requests.get(url, headers=UA, timeout=25)
+    except Exception as e:
+        if debug:
+            print(f"[GET] {url}  ERROR={e}")
+        return ""
+    ct = r.headers.get("Content-Type","")
+    if debug:
+        print(f"[GET] {url}  status={r.status_code}  ct={ct}  bytes={len(r.content)}")
     if r.status_code != 200:
         return ""
     r.encoding = r.apparent_encoding
     return r.text
 
-def detect_active_tracks_keibago(yyyymmdd: str):
+def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
     active = []
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
     for track, baba in BABA_CODE.items():
         url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_babaCode={baba}&k_raceDate={date_slash}"
-        html = fetch(url)
+        html = fetch(url, debug=debug)
         if html and ("1R" in html):
             active.append(track)
+            if debug:
+                print(f"[ACTIVE] {track} (babaCode={baba})")
+        else:
+            if debug:
+                print(f"[NO] {track} (babaCode={baba})")
         time.sleep(0.08)
     return active
 
@@ -307,7 +320,7 @@ def render_result_html(title: str, races_out) -> str:
                 p = pred_by_umaban.get(u)
                 mark = p["mark"] if p else "—"
                 idx = p["score"] if p else None
-                idx_txt = f"{float(idx):.2f}" if isinstance(idx,(int,float,float)) else "—"
+                idx_txt = f"{float(idx):.2f}" if isinstance(idx,(int,float)) else "—"
                 col = idx_color(float(idx)) if isinstance(idx,(int,float)) else "#374151"
                 parts.append(
                     "<tr>"
@@ -363,10 +376,16 @@ def render_result_html(title: str, races_out) -> str:
 
 def main():
     yyyymmdd = os.environ.get("DATE") or datetime.now().strftime("%Y%m%d")
+    debug = os.environ.get("DEBUG", "").strip() == "1"
     os.makedirs("output", exist_ok=True)
 
-    active = detect_active_tracks_keibago(yyyymmdd)
+    print(f"[INFO] DATE={yyyymmdd}")
+
+    active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
+
+    # keibablood は「-2」が多いので最優先
+    SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     for track in active:
         baba = BABA_CODE.get(track)
@@ -377,25 +396,42 @@ def main():
 
         # 騎手成績
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
-        jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url)) if jockey_url else {}
-        print(f"[DEBUG] track={track} jockey_count={len(jockey_stats)} url={jockey_url}")
+        jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
+        if debug:
+            print("========== JOCKEY DEBUG ==========")
+            print(f"[DEBUG] track={track}")
+            print(f"[DEBUG] kaisekisya_url={jockey_url}")
+            print(f"[DEBUG] jockey_stats_count={len(jockey_stats)}")
+            if jockey_stats:
+                smp = list(jockey_stats.items())[:5]
+                print("[DEBUG] jockey_stats_sample:")
+                for nm,(w,q,t) in smp:
+                    print(f"  {nm} -> win={w} quin={q} tri={t}")
+            print("==================================")
 
         found = False
         picked_url = None
-        for i in range(1, 13):
+        used_series = None
+        kb_races = None
+
+        for i in SERIES_ORDER:
             kb_url = f"https://keibablood.com/{yyyymmdd}{code}-{i}/"
-            kb_html = fetch(kb_url)
+            kb_html = fetch(kb_url, debug=debug)
             if not kb_html:
                 continue
-            kb_races = parse_keibablood_tables(kb_html)
-            if not kb_races:
+            races = parse_keibablood_tables(kb_html)
+            if not races:
+                if debug:
+                    print(f"[MISS] {track} series=-{i} : tables not found")
                 continue
             found = True
             picked_url = kb_url
+            used_series = i
+            kb_races = races
             break
 
-        if not found:
-            print(f"[SKIP] {track}: keibablood 未発見（URL規則違い or 未掲載）")
+        if not found or not kb_races:
+            print(f"[SKIP] {track}: keibablood 未発見（-2優先で探索済み）")
             continue
 
         date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
@@ -420,6 +456,11 @@ def main():
             horses.sort(key=lambda x: (-x["score"], -x["base_index"], x["umaban"]))
             top5 = horses[:5]
 
+            if debug and top5:
+                for k, hh in enumerate(top5[:3], start=1):
+                    j3 = norm_jockey3(hh.get("jockey",""))
+                    print(f"[DEBUG] top3 r{rno} horse={hh['name']} jockey={hh.get('jockey','')} j3={j3} base={hh['base_index']} add={hh['jockey_add']} score={hh['score']}")
+
             pred_top5 = []
             for j, hh in enumerate(top5):
                 pred_top5.append({
@@ -438,7 +479,7 @@ def main():
                 "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
                 f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
             )
-            rm_html = fetch(mark_url)
+            rm_html = fetch(mark_url, debug=False)
             result_top3 = parse_top3_from_racemark(rm_html) if rm_html else []
 
             races_out.append({
@@ -461,6 +502,7 @@ def main():
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "source": {
                 "keibablood_url": picked_url,
+                "keibablood_series_used": used_series,
                 "kaisekisya_url": jockey_url
             }
         }
@@ -471,7 +513,7 @@ def main():
         json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
         html_path.write_text(render_result_html(title, races_out), encoding="utf-8")
 
-        print(f"[OK] {track} -> {json_path.name} / {html_path.name}")
+        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (keibablood=-{used_series})")
 
 if __name__ == "__main__":
     main()
