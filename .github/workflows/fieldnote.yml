@@ -41,22 +41,50 @@ jobs:
           rm -rf output
           mkdir -p output
 
-      - name: Run predict
+      # ===== predict =====
+      - name: Run predict (try)
         if: ${{ inputs.mode == 'predict' }}
         run: |
-          python predict_all_today.py
+          python predict_all_today.py || true
+
+      - name: Check predict outputs
+        id: chk_predict
+        if: ${{ inputs.mode == 'predict' }}
+        shell: bash
+        run: |
+          if ls output/predict_*.json >/dev/null 2>&1; then
+            echo "HAS=1" >> $GITHUB_OUTPUT
+            echo "found predict json"
+          else
+            echo "HAS=0" >> $GITHUB_OUTPUT
+            echo "no predict json yet (skip post)"
+          fi
 
       - name: Post predict to WordPress
-        if: ${{ inputs.mode == 'predict' }}
+        if: ${{ inputs.mode == 'predict' && steps.chk_predict.outputs.HAS == '1' }}
         run: |
           MODE=predict python wp_post.py
 
-      - name: Run result
+      # ===== result =====
+      - name: Run result (try)
         if: ${{ inputs.mode == 'result' }}
         run: |
-          python result_all_today.py
+          python result_all_today.py || true
+
+      - name: Check result outputs
+        id: chk_result
+        if: ${{ inputs.mode == 'result' }}
+        shell: bash
+        run: |
+          if ls output/result_*.json >/dev/null 2>&1; then
+            echo "HAS=1" >> $GITHUB_OUTPUT
+            echo "found result json"
+          else
+            echo "HAS=0" >> $GITHUB_OUTPUT
+            echo "no result json yet (skip post)"
+          fi
 
       - name: Post result to WordPress
-        if: ${{ inputs.mode == 'result' }}
+        if: ${{ inputs.mode == 'result' && steps.chk_result.outputs.HAS == '1' }}
         run: |
           MODE=result python wp_post.py
