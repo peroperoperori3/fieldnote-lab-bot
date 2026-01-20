@@ -1,9 +1,6 @@
 name: fieldnote auto post (predict/result)
 
 on:
-  schedule:
-    - cron: "0 21 * * *"  # JST 06:00（予想）
-    - cron: "0 13 * * *"  # JST 22:00（結果）
   workflow_dispatch:
     inputs:
       mode:
@@ -22,14 +19,9 @@ jobs:
       WP_POST_STATUS: ${{ secrets.WP_POST_STATUS }}
 
     steps:
-      # DATEは1回だけ（JSTの当日）
       - name: Set DATE (JST)
         shell: bash
         run: echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
-
-      - name: Debug DATE
-        shell: bash
-        run: echo "DATE=$DATE"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,53 +41,22 @@ jobs:
           rm -rf output
           mkdir -p output
 
-      # ★ 起動した cron 文字列で MODE を確定
-      - name: Decide MODE
-        id: mode
-        shell: bash
-        run: |
-          # 手動実行は inputs.mode を優先
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "MODE=${{ inputs.mode }}" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # schedule 実行は、どのcronで起動したかで確定
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "SCHEDULE=${{ github.event.schedule }}"
-            if [ "${{ github.event.schedule }}" = "0 21 * * *" ]; then
-              echo "MODE=predict" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            if [ "${{ github.event.schedule }}" = "0 13 * * *" ]; then
-              echo "MODE=result" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-          fi
-
-          # 想定外は predict（保険）
-          echo "MODE=predict" >> $GITHUB_OUTPUT
-
-      - name: Debug MODE
-        shell: bash
-        run: echo "MODE=${{ steps.mode.outputs.MODE }}"
-
-      - name: Run predict (generate output for all tracks)
-        if: steps.mode.outputs.MODE == 'predict'
+      - name: Run predict
+        if: ${{ inputs.mode == 'predict' }}
         run: |
           python predict_all_today.py
 
       - name: Post predict to WordPress
-        if: steps.mode.outputs.MODE == 'predict'
+        if: ${{ inputs.mode == 'predict' }}
         run: |
           MODE=predict python wp_post.py
 
-      - name: Run result (generate output for all tracks)
-        if: steps.mode.outputs.MODE == 'result'
+      - name: Run result
+        if: ${{ inputs.mode == 'result' }}
         run: |
           python result_all_today.py
 
       - name: Post result to WordPress
-        if: steps.mode.outputs.MODE == 'result'
+        if: ${{ inputs.mode == 'result' }}
         run: |
           MODE=result python wp_post.py
