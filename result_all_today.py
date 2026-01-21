@@ -1,11 +1,18 @@
 import os, re, json, time
 from datetime import datetime
 from pathlib import Path
+
 import requests
 from bs4 import BeautifulSoup
 
-UA = {"User-Agent":"Mozilla/5.0", "Accept-Language":"ja,en;q=0.8"}
-MARKS5 = ["◎","〇","▲","△","☆"]
+UA = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ja,en;q=0.8"}
+MARKS5 = ["◎", "〇", "▲", "△", "☆"]
+
+# ===== スコア重み（環境変数で調整可）=====
+# SPメイン、KBと騎手は補正程度（デフォルト）
+SP_W = float(os.environ.get("SP_W", "1.0"))
+KB_W = float(os.environ.get("KB_W", "0.10"))
+JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
 
 # keiba.go.jp babaCode（開催判定用）※帯広除外
 BABA_CODE = {
@@ -68,8 +75,8 @@ def fetch(url: str, debug=False) -> str:
         if debug:
             print(f"[GET] {url}  ERROR={e}")
         return ""
-    ct = r.headers.get("Content-Type","")
     if debug:
+        ct = r.headers.get("Content-Type", "")
         print(f"[GET] {url}  status={r.status_code}  ct={ct}  bytes={len(r.content)}")
     if r.status_code != 200:
         return ""
@@ -92,10 +99,9 @@ def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
         time.sleep(0.08)
     return active
 
-# ====== kaisekisya 解析 ======
+# ====== kaisekisya 解析（騎手補正） ======
 def parse_kaisekisya_jockey_table(html: str):
     soup = BeautifulSoup(html, "lxml")
-
     target = None
     for t in soup.find_all("table"):
         txt = t.get_text(" ", strip=True)
@@ -162,16 +168,14 @@ def match_jockey_by3(j3: str, stats: dict):
     return None
 
 def jockey_add_points(win: float, quin: float, tri: float) -> float:
-    """
-    騎手補正（丸めない）
-    - 内部は生floatで加算
-    - 表示は小数2桁
-    """
     raw = win * 0.45 + quin * 0.35 + tri * 0.20
     return raw / 4.0
 
 # ====== keibablood（指数表 + 騎手） ======
 def parse_keibablood_tables(html: str):
+    """
+    返り値: { race_no: [ {umaban,name,base_index,jockey}, ... ] }
+    """
     soup = BeautifulSoup(html, "lxml")
     races = {}
 
@@ -182,7 +186,7 @@ def parse_keibablood_tables(html: str):
         headers = [c.get_text(" ", strip=True) for c in head.find_all(["th","td"])]
         hj = " ".join(headers)
 
-        if not (("指数" in hj) and ("馬名" in hj) and ("番" in hj) and ("騎手" in hj)):
+        if not (("指数" in hj) and ("馬名" in hj) and ("番" in hj)):
             continue
 
         def idx(k):
@@ -192,7 +196,7 @@ def parse_keibablood_tables(html: str):
             return None
 
         i_ban, i_name, i_idx, i_jok = idx("番"), idx("馬名"), idx("指数"), idx("騎手")
-        if None in (i_ban, i_name, i_idx, i_jok):
+        if None in (i_ban, i_name, i_idx):
             continue
 
         rno = len(races) + 1
@@ -202,15 +206,20 @@ def parse_keibablood_tables(html: str):
             if not cells:
                 continue
             vals = [c.get_text(" ", strip=True) for c in cells]
-            if len(vals) <= max(i_ban, i_name, i_idx, i_jok):
-                continue
+
+            max_need = max(i_ban, i_name, i_idx, (i_jok or 0))
+            if len(vals) <= max_need:
+                if len(vals) <= max(i_ban, i_name, i_idx):
+                    continue
 
             mban = re.search(r"\d+", vals[i_ban])
             midx = re.search(r"[\d.]+", vals[i_idx])
             if not (mban and midx):
                 continue
 
-            jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[i_jok])
+            jockey = ""
+            if i_jok is not None and i_jok < len(vals):
+                jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[i_jok])
 
             rows.append({
                 "umaban": int(mban.group()),
@@ -223,6 +232,218 @@ def parse_keibablood_tables(html: str):
             races[rno] = rows
 
     return races
+
+# ====== 吉馬（SP能力値） ======
+def build_kichiuma_fp_url(yyyymmdd: str, track_id: int, race_no: int) -> str:
+    date_slash = f"{yyyymmdd[:4]}/{int(yyyymmdd[4:6])}/{int(yyyymmdd[6:8])}"
+    date_enc = date_slash.replace("/", "%2F")
+    race_id = f"{yyyymmdd}{race_no:02d}{track_id:02d}"
+    return (
+        "https://www.kichiuma-chiho.net/php/search.php"
+        f"?race_id={race_id}&date={date_enc}&no={race_no}&id={track_id}&p=fp"
+    )
+
+def _norm(s: str) -> str:
+    s = str(s).replace("\u3000", " ")
+    s = re.sub(r"\s+", "", s)
+    return s
+
+def parse_kichiuma_race_meta(html: str):
+    soup = BeautifulSoup(html, "lxml")
+    text = soup.get_text("\n", strip=True)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    title_line = ""
+    race_name = ""
+    race_info = ""
+
+    for ln in lines:
+        if re.search(r"\d{4}年\d{2}月\d{2}日.*?競馬.*?第\d+競走", ln):
+            title_line = ln
+            break
+
+    idx5 = None
+    for i, ln in enumerate(lines):
+        if "(5着)" in ln:
+            idx5 = i
+            break
+    if idx5 is not None and idx5 + 1 < len(lines):
+        race_name = lines[idx5 + 1]
+    if idx5 is not None and idx5 + 2 < len(lines):
+        race_info = lines[idx5 + 2]
+
+    return {"title_line": title_line, "race_name": race_name, "race_info": race_info}
+
+def find_sp_table(soup: BeautifulSoup):
+    best = None
+    best_score = -1
+    for t in soup.find_all("table"):
+        trs = t.find_all("tr")
+        if len(trs) < 2:
+            continue
+
+        head_cells = trs[0].find_all(["th","td"])
+        if not head_cells:
+            continue
+
+        headers = [_norm(c.get_text(" ", strip=True)) for c in head_cells]
+        hdr_join = " ".join(headers)
+
+        score = 0
+        if "SP能力値" in hdr_join: score += 5
+        if "競走馬名" in hdr_join: score += 3
+        if "先行力" in hdr_join: score += 2
+        if "末脚力" in hdr_join: score += 2
+        if "SP信頼" in hdr_join: score += 1
+        if "SP調整" in hdr_join: score += 1
+        if "SP最大" in hdr_join: score += 1
+        if "評価" in hdr_join: score += 1
+        if "馬" in hdr_join: score += 1
+
+        row2 = trs[1].find_all(["td","th"])
+        if row2:
+            first = _norm(row2[0].get_text(" ", strip=True))
+            if re.fullmatch(r"\d{1,2}", first):
+                score += 3
+
+        if score > best_score:
+            best_score = score
+            best = t
+
+    return best if (best and best_score >= 8) else None
+
+def parse_kichiuma_sp(html: str):
+    """
+    return: (sp_by_umaban: dict[int,float], race_name: str)
+    ※SPが空欄の馬は「辞書に入れない」（＝欠損として推定対象にする）
+    """
+    soup = BeautifulSoup(html, "lxml")
+    meta = parse_kichiuma_race_meta(html)
+
+    t = find_sp_table(soup)
+    if not t:
+        return {}, meta.get("race_name", "")
+
+    trs = t.find_all("tr")
+    headers_raw = [c.get_text(" ", strip=True) for c in trs[0].find_all(["th","td"])]
+    headers = [_norm(h) for h in headers_raw]
+
+    def find_col_exact(key_norm):
+        for i, h in enumerate(headers):
+            if h == key_norm:
+                return i
+        return None
+
+    c_umaban = find_col_exact("馬") or 0
+    c_sp = find_col_exact("SP能力値")
+
+    if c_sp is None:
+        for i in range(len(headers) - 1):
+            if headers[i] == "SP" and headers[i+1] == "能力値":
+                c_sp = i
+                break
+    if c_sp is None:
+        return {}, meta.get("race_name", "")
+
+    sp_by = {}
+    for tr in trs[1:]:
+        cells = tr.find_all(["td","th"])
+        if not cells:
+            continue
+        vals = [c.get_text(" ", strip=True) for c in cells]
+        if len(vals) <= max(c_umaban, c_sp):
+            continue
+
+        b = _norm(vals[c_umaban])
+        if not re.fullmatch(r"\d{1,2}", b):
+            continue
+        umaban = int(b)
+        if not (1 <= umaban <= 18):
+            continue
+
+        cell = str(vals[c_sp]).strip()
+        if cell == "" or cell in {"-", "—", "―"}:
+            continue
+
+        msp = re.search(r"(\d+(?:\.\d+)?)", cell)
+        if not msp:
+            continue
+
+        sp_by[umaban] = float(msp.group(1))
+
+    return sp_by, meta.get("race_name", "")
+
+# ===== 推定（SP欠損をKBで「周りに合わせて」埋める） =====
+def clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+def fit_linear(xs, ys):
+    """
+    最小二乗の一次式 y = a*x + b
+    """
+    n = len(xs)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    denom = sum((x - mx) ** 2 for x in xs)
+    if denom == 0:
+        return None
+    a = sum((xs[i] - mx) * (ys[i] - my) for i in range(n)) / denom
+    b = my - a * mx
+    return a, b
+
+def estimate_sp_factory(rows, debug=False):
+    """
+    rows: [{base_index, sp_raw(None可)}...]
+    返り値: estimate_sp(base_index)->float, 追加情報(dict)
+    """
+    pairs = [(r["base_index"], r["sp_raw"]) for r in rows if r["sp_raw"] is not None]
+    kb_vals = [r["base_index"] for r in rows if isinstance(r.get("base_index"), (int,float))]
+
+    kb_min = min(kb_vals) if kb_vals else 0.0
+    kb_max = max(kb_vals) if kb_vals else 1.0
+
+    sp_min_obs = min([y for _, y in pairs], default=50.0)
+    sp_max_obs = max([y for _, y in pairs], default=75.0)
+
+    a_b = None
+    if len(pairs) >= 3:
+        xs = [x for x, _ in pairs]
+        ys = [y for _, y in pairs]
+        a_b = fit_linear(xs, ys)
+
+    def est(base_index: float) -> float:
+        # ① データ多い → 回帰で推定（レースの空気に合わせる）
+        if a_b is not None:
+            a, b = a_b
+            v = a * base_index + b
+            return clamp(v, sp_min_obs - 2.0, sp_max_obs + 2.0)
+
+        # ② 少数データ → 中央のズレで補正
+        if len(pairs) >= 1:
+            sp_med = sorted([y for _, y in pairs])[len(pairs) // 2]
+            kb_med = sorted([x for x, _ in pairs])[len(pairs) // 2]
+            v = base_index + (sp_med - kb_med)
+            return clamp(v, 45.0, 78.0)
+
+        # ③ 全欠損 → KB順位でSPっぽいレンジ(55〜70)に正規化
+        if kb_max == kb_min:
+            return 62.0
+        t = (base_index - kb_min) / (kb_max - kb_min)  # 0..1
+        v = 55.0 + t * 15.0
+        return clamp(v, 45.0, 78.0)
+
+    info = {
+        "pairs_n": len(pairs),
+        "sp_min_obs": sp_min_obs,
+        "sp_max_obs": sp_max_obs,
+        "has_linear": (a_b is not None),
+        "linear": a_b,
+        "kb_min": kb_min,
+        "kb_max": kb_max,
+    }
+    if debug:
+        print(f"[DEBUG] SP-estimator info: {info}")
+    return est, info
 
 # ====== keiba.go.jp 結果（RaceMarkTable） ======
 def parse_top3_from_racemark(html_text: str):
@@ -252,13 +473,14 @@ def parse_top3_from_racemark(html_text: str):
             break
     return top
 
-# ====== 見た目（結果：keiba_kesaki_bot風） ======
+# ====== HTML（結果ページ：見出しを「1R レース名」に） ======
 def render_result_html(title: str, races_out) -> str:
     import html as _html
 
     def esc(s): return _html.escape(str(s))
 
     def idx_color(v: float) -> str:
+        # ここは「絶対値」色のまま（見にくいなら予想側と同様に文字色だけにしてもOK）
         if v >= 75: return "#b91c1c"
         if v >= 68: return "#c2410c"
         if v >= 60: return "#1d4ed8"
@@ -283,6 +505,8 @@ def render_result_html(title: str, races_out) -> str:
 
     for r in races_out:
         rno = int(r["race_no"])
+        race_name = (r.get("race_name") or "").strip()
+
         pred = r.get("pred_top5", [])
         top3 = r.get("result_top3", [])
 
@@ -293,7 +517,7 @@ def render_result_html(title: str, races_out) -> str:
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
         )
 
-        head = f"{rno}R"
+        head = f"{rno}R" + (f" {race_name}" if race_name else "")
         parts.append(
             "<div style='display:flex;align-items:baseline;gap:10px;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
@@ -380,21 +604,22 @@ def main():
     os.makedirs("output", exist_ok=True)
 
     print(f"[INFO] DATE={yyyymmdd}")
+    print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
 
     active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
 
-    # keibablood は「-2」が多いので最優先
     SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     for track in active:
         baba = BABA_CODE.get(track)
+        track_id = baba  # 吉馬id = 19/23... と同じ運用
         code = KEIBABLOOD_CODE.get(track)
-        if not baba or not code:
+        if not baba or not track_id or not code:
             print(f"[SKIP] {track}: code missing")
             continue
 
-        # 騎手成績
+        # ---- 騎手成績 ----
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
         jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
         if debug:
@@ -402,13 +627,9 @@ def main():
             print(f"[DEBUG] track={track}")
             print(f"[DEBUG] kaisekisya_url={jockey_url}")
             print(f"[DEBUG] jockey_stats_count={len(jockey_stats)}")
-            if jockey_stats:
-                smp = list(jockey_stats.items())[:5]
-                print("[DEBUG] jockey_stats_sample:")
-                for nm,(w,q,t) in smp:
-                    print(f"  {nm} -> win={w} quin={q} tri={t}")
             print("==================================")
 
+        # ---- keibablood 取得 ----
         found = False
         picked_url = None
         used_series = None
@@ -437,29 +658,79 @@ def main():
         date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
 
         races_out = []
-        for rno in sorted(kb_races.keys()):
-            horses = []
-            for h in kb_races[rno]:
-                rates = match_jockey_by3(norm_jockey3(h.get("jockey","")), jockey_stats)
-                add = jockey_add_points(*rates) if rates else 0.0
-                score = float(h["base_index"]) + float(add)
+        track_incomplete = False
 
-                horses.append({
-                    "umaban": h["umaban"],
+        for rno in sorted(kb_races.keys()):
+            # ---- 吉馬取得（取れなかったら開催場スキップ）----
+            fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
+            fp_html = fetch(fp_url, debug=False)
+            if not fp_html:
+                print(f"[SKIP] {track} {rno}R: kichiuma fetch failed -> skip track")
+                track_incomplete = True
+                break
+
+            sp_by_umaban, race_name = parse_kichiuma_sp(fp_html)
+
+            # ---- KB側 rows ----
+            rows = []
+            for h in kb_races[rno]:
+                u = int(h["umaban"])
+                base = float(h["base_index"])
+                j = h.get("jockey", "")
+
+                rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
+                add = jockey_add_points(*rates) if rates else 0.0
+
+                sp = sp_by_umaban.get(u)  # Noneなら欠損
+
+                rows.append({
+                    "umaban": u,
                     "name": h["name"],
-                    "jockey": h.get("jockey",""),
-                    "base_index": float(h["base_index"]),
+                    "jockey": j,
+                    "base_index": base,
                     "jockey_add": float(add),
-                    "score": float(score),
+                    "sp_raw": (float(sp) if sp is not None else None),
                 })
 
-            horses.sort(key=lambda x: (-x["score"], -x["base_index"], x["umaban"]))
-            top5 = horses[:5]
+            # ---- SP欠損を推定 ----
+            est_sp, est_info = estimate_sp_factory(rows, debug=False)
 
-            if debug and top5:
-                for k, hh in enumerate(top5[:3], start=1):
-                    j3 = norm_jockey3(hh.get("jockey",""))
-                    print(f"[DEBUG] top3 r{rno} horse={hh['name']} jockey={hh.get('jockey','')} j3={j3} base={hh['base_index']} add={hh['jockey_add']} score={hh['score']}")
+            missing = [r["umaban"] for r in rows if r["sp_raw"] is None]
+            for r in rows:
+                if r["sp_raw"] is None:
+                    r["sp_est"] = float(est_sp(r["base_index"]))
+                else:
+                    r["sp_est"] = float(r["sp_raw"])
+
+            if missing:
+                print(f"[INFO] {track} {rno}R: SP missing -> estimated for umaban={missing} (pairs={est_info['pairs_n']}, linear={est_info['has_linear']})")
+
+            # ---- スコア計算（SPメイン）----
+            horses_scored = []
+            for r in rows:
+                sp = float(r["sp_est"])
+                base = float(r["base_index"])
+                add = float(r["jockey_add"])
+                score = (SP_W * sp) + (KB_W * base) + (JOCKEY_W * add)
+
+                horses_scored.append({
+                    "umaban": int(r["umaban"]),
+                    "name": r["name"],
+                    "jockey": r.get("jockey", ""),
+                    "sp": sp,
+                    "base_index": base,
+                    "jockey_add": add,
+                    "score": float(score),
+                    "source": {"kichiuma_fp_url": fp_url},
+                })
+
+            if len(horses_scored) < 5:
+                print(f"[SKIP] {track} {rno}R: horses < 5 -> skip track")
+                track_incomplete = True
+                break
+
+            horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
+            top5 = horses_scored[:5]
 
             pred_top5 = []
             for j, hh in enumerate(top5):
@@ -468,13 +739,15 @@ def main():
                     "umaban": int(hh["umaban"]),
                     "name": hh["name"],
                     "score": float(hh["score"]),
-                    # デバッグ用に残す
+                    # デバッグ用に残す（wp側表示はしない）
+                    "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
-                    "jockey": hh.get("jockey",""),
+                    "jockey": hh.get("jockey", ""),
                     "jockey_add": float(hh["jockey_add"]),
+                    "source": hh.get("source", {}),
                 })
 
-            # 結果（上位3）
+            # ---- 結果（上位3）----
             mark_url = (
                 "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
                 f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
@@ -484,12 +757,17 @@ def main():
 
             races_out.append({
                 "race_no": int(rno),
+                "race_name": race_name,
                 "pred_top5": pred_top5,
                 "result_top3": result_top3,
-                "source": {"racemark_url": mark_url}
+                "source": {"racemark_url": mark_url, "kichiuma_fp_url": fp_url},
             })
 
             time.sleep(0.10)
+
+        if track_incomplete:
+            print(f"[SKIP] {track}: indices not usable -> NO OUTPUT")
+            continue
 
         title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 結果"
 
@@ -500,6 +778,7 @@ def main():
             "title": title,
             "races": races_out,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "weights": {"SP_W": SP_W, "KB_W": KB_W, "JOCKEY_W": JOCKEY_W},
             "source": {
                 "keibablood_url": picked_url,
                 "keibablood_series_used": used_series,
