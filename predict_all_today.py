@@ -373,18 +373,62 @@ def parse_kichiuma_sp(html: str):
 
     return sp_by, meta.get("race_name", "")
 
-# ====== HTML（見出しを「1R レース名」に） ======
+# ====== HTML（見出しを「1R レース名」に + 相対色分け） ======
 def render_html(title: str, preds) -> str:
     import html as _html
 
     def esc(s): return _html.escape(str(s))
 
-    def idx_color(v: float) -> str:
-        if v >= 75: return "#b91c1c"
-        if v >= 68: return "#c2410c"
-        if v >= 60: return "#1d4ed8"
-        if v >= 55: return "#0f766e"
-        return "#374151"
+    # ---- 相対色分け：上位5頭内の min-max を 0..1 にして濃淡 ----
+    def _clamp01(x: float) -> float:
+        return max(0.0, min(1.0, x))
+
+    def _mix(c1, c2, t: float):
+        # c1/c2: (r,g,b) 0-255
+        t = _clamp01(t)
+        return (
+            int(round(c1[0] + (c2[0] - c1[0]) * t)),
+            int(round(c1[1] + (c2[1] - c1[1]) * t)),
+            int(round(c1[2] + (c2[2] - c1[2]) * t)),
+        )
+
+    def _rgb(rgb):
+        return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+    def _luma(rgb):
+        # 文字色自動（明るさ）
+        r, g, b = rgb
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    # 薄い青 → 濃い青（好みで調整してOK）
+    LO = (239, 246, 255)  # #eff6ff
+    HI = (29, 78, 216)    # #1d4ed8
+
+    def score_style(sc: float, scores_in_race):
+        # 5頭内で相対化
+        if not scores_in_race:
+            return "color:#111827;"
+        mn = min(scores_in_race)
+        mx = max(scores_in_race)
+        if mx == mn:
+            t = 0.55  # 全部同じなら中間
+        else:
+            t = (float(sc) - mn) / (mx - mn)
+
+        # 差が小さいレースでも “ちょい差” が見えるようにカーブ
+        # （tが0.0/1.0に張り付かず、中間が厚くなる）
+        t2 = _clamp01(t ** 0.75)
+
+        bg = _mix(LO, HI, t2)
+        fg = (255, 255, 255) if _luma(bg) < 140 else (17, 24, 39)  # 白 or 黒
+
+        return (
+            f"background:{_rgb(bg)};"
+            f"color:{_rgb(fg)};"
+            "padding:2px 8px;border-radius:10px;display:inline-block;"
+            "min-width:72px;text-align:right;font-variant-numeric:tabular-nums;"
+            "font-weight:900;"
+        )
 
     def badge(text: str, bg: str, fg: str = "#111827") -> str:
         return (
@@ -411,6 +455,9 @@ def render_html(title: str, preds) -> str:
         race_name = (race.get("race_name") or "").strip()
         picks = race["picks"]
 
+        # ★このレースの上位5頭のスコア分布
+        scores_in_race = [float(p.get("score", 0.0)) for p in picks if isinstance(p.get("score", None), (int, float))]
+
         parts.append(
             "<div style='margin:16px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
@@ -436,14 +483,18 @@ def render_html(title: str, preds) -> str:
         )
 
         for i, p in enumerate(picks):
-            bg = "#ffffff" if i % 2 == 0 else "#f8fafc"
+            bgrow = "#ffffff" if i % 2 == 0 else "#f8fafc"
             sc = float(p.get("score", 0.0))
+            sc_style = score_style(sc, scores_in_race)
+
             parts.append(
-                f"<tr style='background:{bg};'>"
+                f"<tr style='background:{bgrow};'>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(p.get('mark',''))}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-variant-numeric:tabular-nums;'>{int(p.get('umaban',0))}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:left;font-weight:750;'>{esc(p.get('name',''))}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;font-weight:900;color:{idx_color(sc)};font-variant-numeric:tabular-nums;'>{sc:.2f}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;'>"
+                f"<span style=\"{sc_style}\">{sc:.2f}</span>"
+                f"</td>"
                 f"</tr>"
             )
 
@@ -686,7 +737,7 @@ def main():
             continue
 
         title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 予想"
-      
+
         out = {
             "date": yyyymmdd,
             "place": track,
