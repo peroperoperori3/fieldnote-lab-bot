@@ -8,8 +8,7 @@ from bs4 import BeautifulSoup
 UA = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ja,en;q=0.8"}
 MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 
-# ===== スコア重み（環境変数で調整可）=====
-# SPをメイン、KBと騎手は補正程度（デフォルト）
+# ===== スコア重み（予想と合わせて残す：結果は pred_top5 の score を表示に使うだけ）=====
 SP_W = float(os.environ.get("SP_W", "1.0"))
 KB_W = float(os.environ.get("KB_W", "0.10"))
 JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
@@ -68,7 +67,6 @@ KAISEKISYA_JOCKEY_URL = {
   "佐賀": "https://www.kaisekisya.net/local/jockey/saga.html",
 }
 
-# ====== HTTP fetch ======
 def fetch(url: str, debug=False) -> str:
     try:
         r = requests.get(url, headers=UA, timeout=25)
@@ -84,7 +82,6 @@ def fetch(url: str, debug=False) -> str:
     r.encoding = r.apparent_encoding
     return r.text
 
-# ====== 開催判定（keiba.go.jp） ======
 def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
     active = []
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
@@ -101,7 +98,7 @@ def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
         time.sleep(0.08)
     return active
 
-# ====== kaisekisya（騎手補正） ======
+# ====== kaisekisya 解析（騎手補正） ======
 def parse_kaisekisya_jockey_table(html: str):
     soup = BeautifulSoup(html, "lxml")
     target = None
@@ -270,6 +267,7 @@ def parse_kichiuma_race_meta(html: str):
             break
     if idx5 is not None and idx5 + 1 < len(lines):
         race_name = lines[idx5 + 1]
+
     if idx5 is not None and idx5 + 2 < len(lines):
         race_info = lines[idx5 + 2]
 
@@ -316,7 +314,7 @@ def find_sp_table(soup: BeautifulSoup):
 def parse_kichiuma_sp(html: str):
     """
     return: (sp_by_umaban: dict[int,float], race_name: str)
-    ※SPが空欄の馬は「辞書に入れない」（欠損として推定対象）
+    ※SPが空欄の馬は「辞書に入れない」（＝欠損として推定対象にする）
     """
     soup = BeautifulSoup(html, "lxml")
     meta = parse_kichiuma_race_meta(html)
@@ -374,7 +372,7 @@ def parse_kichiuma_sp(html: str):
 
     return sp_by, meta.get("race_name", "")
 
-# ===== 推定（SP欠損をKBで“周りに合わせて”埋める） =====
+# ===== 推定まわり（SP欠損をKBで「周りに合わせて」埋める） =====
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
@@ -474,19 +472,55 @@ def parse_top3_from_racemark(html_text: str):
             break
     return top
 
-# ====== 見た目（結果）：指数の色は「予想上位5内の順位」で文字色だけ ======
+# ====== HTML（予想の相対色分けロジックに完全追従） ======
 def render_result_html(title: str, races_out) -> str:
     import html as _html
 
     def esc(s): return _html.escape(str(s))
 
-    # ★予想側と同じ「数値の閾値」で色を決める
-    def idx_color(v: float) -> str:
-        if v >= 75: return "#b91c1c"
-        if v >= 68: return "#c2410c"
-        if v >= 60: return "#1d4ed8"
-        if v >= 55: return "#0f766e"
-        return "#374151"
+    # ---- 予想と同じ「相対色分け」ユーティリティ ----
+    def _clamp01(x: float) -> float:
+        return max(0.0, min(1.0, x))
+
+    def _mix(c1, c2, t: float):
+        t = _clamp01(t)
+        return (
+            int(round(c1[0] + (c2[0] - c1[0]) * t)),
+            int(round(c1[1] + (c2[1] - c1[1]) * t)),
+            int(round(c1[2] + (c2[2] - c1[2]) * t)),
+        )
+
+    def _rgb(rgb):
+        return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+    def _luma(rgb):
+        r, g, b = rgb
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    LO = (239, 246, 255)  # #eff6ff
+    HI = (29, 78, 216)    # #1d4ed8
+
+    def score_style(sc: float, scores_in_race):
+        if not scores_in_race:
+            return "color:#111827;"
+        mn = min(scores_in_race)
+        mx = max(scores_in_race)
+        if mx == mn:
+            t = 0.55
+        else:
+            t = (float(sc) - mn) / (mx - mn)
+
+        t2 = _clamp01(t ** 0.75)
+        bg = _mix(LO, HI, t2)
+        fg = (255, 255, 255) if _luma(bg) < 140 else (17, 24, 39)
+
+        return (
+            f"background:{_rgb(bg)};"
+            f"color:{_rgb(fg)};"
+            "padding:2px 8px;border-radius:10px;display:inline-block;"
+            "min-width:72px;text-align:right;font-variant-numeric:tabular-nums;"
+            "font-weight:900;"
+        )
 
     def badge(text: str, bg: str, fg: str="#111827") -> str:
         return (f"<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
@@ -513,6 +547,9 @@ def render_result_html(title: str, races_out) -> str:
 
         pred_by_umaban = {int(x["umaban"]): x for x in pred}
 
+        # ★このレースの上位5頭のスコア分布（相対色分けの基準）
+        scores_in_race = [float(p.get("score", 0.0)) for p in pred if isinstance(p.get("score", None), (int, float))]
+
         parts.append(
             "<div style='margin:16px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
@@ -525,7 +562,7 @@ def render_result_html(title: str, races_out) -> str:
             "</div>"
         )
 
-        # --- 結果セクション（赤系） ---
+        # --- 結果セクション（赤系見出しだけ赤、指数の色は予想と同じ相対色） ---
         parts.append(section_title("結果（1〜3着）", badge("RESULT", "#fecaca"), "#fff1f2"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;margin-bottom:10px;'>")
@@ -545,14 +582,14 @@ def render_result_html(title: str, races_out) -> str:
                 nm = x["name"]
                 p = pred_by_umaban.get(u)
                 mark = p["mark"] if p else "—"
-                idx = p["score"] if p else None
+                idx = p.get("score") if p else None
 
                 if isinstance(idx, (int, float)):
-                    idx_txt = f"{float(idx):.2f}"
-                    col = idx_color(float(idx))
+                    sc = float(idx)
+                    sc_style = score_style(sc, scores_in_race)
+                    idx_html = f"<span style=\"{sc_style}\">{sc:.2f}</span>"
                 else:
-                    idx_txt = "—"
-                    col = "#374151"
+                    idx_html = "<span style='color:#6b7280;'>—</span>"
 
                 parts.append(
                     "<tr>"
@@ -560,7 +597,7 @@ def render_result_html(title: str, races_out) -> str:
                     f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:center;'>{u}</td>"
                     f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:left;font-weight:750;'>{esc(nm)}</td>"
                     f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:center;font-weight:900;'>{esc(mark)}</td>"
-                    f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:right;font-weight:900;color:{col};font-variant-numeric:tabular-nums;'>{esc(idx_txt)}</td>"
+                    f"<td style='padding:8px;border-bottom:1px solid #fee2e2;text-align:right;'>{idx_html}</td>"
                     "</tr>"
                 )
         else:
@@ -587,16 +624,20 @@ def render_result_html(title: str, races_out) -> str:
             pos_by_umaban[int(x["umaban"])] = int(x["rank"])
 
         for i, p in enumerate(pred):
-            bg = "#ffffff" if i % 2 == 0 else "#f8fafc"
+            bgrow = "#ffffff" if i % 2 == 0 else "#f8fafc"
             pos = pos_by_umaban.get(int(p["umaban"]))
             pos_txt = f"{pos}着" if pos else "—"
             sc = float(p["score"])
+            sc_style = score_style(sc, scores_in_race)
+
             parts.append(
-                f"<tr style='background:{bg};'>"
+                f"<tr style='background:{bgrow};'>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(p['mark'])}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-variant-numeric:tabular-nums;'>{int(p['umaban'])}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:left;font-weight:750;'>{esc(p['name'])}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;font-weight:900;color:{idx_color(sc)};font-variant-numeric:tabular-nums;'>{sc:.2f}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;'>"
+                f"<span style=\"{sc_style}\">{sc:.2f}</span>"
+                f"</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(pos_txt)}</td>"
                 f"</tr>"
             )
@@ -623,7 +664,7 @@ def main():
 
     for track in active:
         baba = BABA_CODE.get(track)
-        track_id = BABA_CODE.get(track)  # 吉馬idもこの数値でOK（例: 船橋=19）
+        track_id = BABA_CODE.get(track)  # 吉馬idも同値でOK運用（例: 船橋=19）
         code = KEIBABLOOD_CODE.get(track)
         if not baba or not track_id or not code:
             print(f"[SKIP] {track}: code missing")
@@ -632,12 +673,6 @@ def main():
         # ---- 騎手成績 ----
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
         jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
-        if debug:
-            print("========== JOCKEY DEBUG ==========")
-            print(f"[DEBUG] track={track}")
-            print(f"[DEBUG] kaisekisya_url={jockey_url}")
-            print(f"[DEBUG] jockey_stats_count={len(jockey_stats)}")
-            print("==================================")
 
         # ---- keibablood 取得 ----
         found = False
@@ -671,7 +706,7 @@ def main():
         track_incomplete = False
 
         for rno in sorted(kb_races.keys()):
-            # ---- 吉馬（SP）取得：取れないなら開催場スキップ ----
+            # ---- 吉馬取得（レース名用 + SP推定用）----
             fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
             fp_html = fetch(fp_url, debug=False)
             if not fp_html:
@@ -681,7 +716,7 @@ def main():
 
             sp_by_umaban, race_name = parse_kichiuma_sp(fp_html)
 
-            # ---- KB馬リスト作成（SP欠損は None）----
+            # ---- KB側の馬リスト作成（SP欠損は None）----
             rows = []
             for h in kb_races[rno]:
                 u = int(h["umaban"])
@@ -702,20 +737,16 @@ def main():
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
-            # ---- SP推定器で欠損を埋める ----
+            # ---- SP推定器を作成して欠損を埋める（予想と同じ）----
             est_sp, est_info = estimate_sp_factory(rows, debug=False)
 
-            missing = [r["umaban"] for r in rows if r["sp_raw"] is None]
             for r in rows:
                 if r["sp_raw"] is None:
                     r["sp_est"] = float(est_sp(r["base_index"]))
                 else:
                     r["sp_est"] = float(r["sp_raw"])
 
-            if missing:
-                print(f"[INFO] {track} {rno}R: SP missing -> estimated for umaban={missing} (pairs={est_info['pairs_n']}, linear={est_info['has_linear']})")
-
-            # ---- 予想スコア計算（SPメイン）----
+            # ---- スコア計算（予想と同じ定義で top5 を作る）----
             horses_scored = []
             for r in rows:
                 sp = float(r["sp_est"])
@@ -749,15 +780,15 @@ def main():
                     "umaban": int(hh["umaban"]),
                     "name": hh["name"],
                     "score": float(hh["score"]),
-                    # デバッグ用（wp側表示はしない）
+                    # デバッグ用
                     "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
-                    "jockey": hh.get("jockey", ""),
+                    "jockey": hh.get("jockey",""),
                     "jockey_add": float(hh["jockey_add"]),
                     "source": hh.get("source", {}),
                 })
 
-            # ---- 結果（上位3） ----
+            # ---- 結果（上位3）----
             mark_url = (
                 "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
                 f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
@@ -795,7 +826,7 @@ def main():
             "source": {
                 "keibablood_url": picked_url,
                 "keibablood_series_used": used_series,
-                "kaisekisya_url": jockey_url,
+                "kaisekisya_url": jockey_url
             }
         }
 
