@@ -480,15 +480,13 @@ def render_result_html(title: str, races_out) -> str:
 
     def esc(s): return _html.escape(str(s))
 
-    def idx_color_by_rank(rank_idx: int, n: int) -> str:
-        if n <= 1:
-            return "#111827"
-        t = 1.0 - (rank_idx / (n - 1))
-        if t >= 0.90: return "#111827"
-        if t >= 0.70: return "#1f2937"
-        if t >= 0.50: return "#374151"
-        if t >= 0.30: return "#6b7280"
-        return "#9ca3af"
+    # ★予想側と同じ「数値の閾値」で色を決める
+    def idx_color(v: float) -> str:
+        if v >= 75: return "#b91c1c"
+        if v >= 68: return "#c2410c"
+        if v >= 60: return "#1d4ed8"
+        if v >= 55: return "#0f766e"
+        return "#374151"
 
     def badge(text: str, bg: str, fg: str="#111827") -> str:
         return (f"<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
@@ -548,15 +546,13 @@ def render_result_html(title: str, races_out) -> str:
                 p = pred_by_umaban.get(u)
                 mark = p["mark"] if p else "—"
                 idx = p["score"] if p else None
-                idx_txt = f"{float(idx):.2f}" if isinstance(idx,(int,float)) else "—"
 
-                col = "#374151"
                 if isinstance(idx, (int, float)):
-                    try:
-                        ridx = next(i for i, pp in enumerate(pred) if int(pp["umaban"]) == u)
-                        col = idx_color_by_rank(ridx, len(pred))
-                    except StopIteration:
-                        col = "#374151"
+                    idx_txt = f"{float(idx):.2f}"
+                    col = idx_color(float(idx))
+                else:
+                    idx_txt = "—"
+                    col = "#374151"
 
                 parts.append(
                     "<tr>"
@@ -569,6 +565,7 @@ def render_result_html(title: str, races_out) -> str:
                 )
         else:
             parts.append("<tr><td colspan='5' style='padding:10px;color:#6b7280;'>結果取得できませんでした</td></tr>")
+
         parts.append("</tbody></table></div>")
 
         # --- 予想セクション（青系） ---
@@ -599,7 +596,7 @@ def render_result_html(title: str, races_out) -> str:
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(p['mark'])}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-variant-numeric:tabular-nums;'>{int(p['umaban'])}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:left;font-weight:750;'>{esc(p['name'])}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;font-weight:900;color:{idx_color_by_rank(i, len(pred))};font-variant-numeric:tabular-nums;'>{sc:.2f}</td>"
+                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;font-weight:900;color:{idx_color(sc)};font-variant-numeric:tabular-nums;'>{sc:.2f}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(pos_txt)}</td>"
                 f"</tr>"
             )
