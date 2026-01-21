@@ -423,7 +423,7 @@ def render_html(title: str, preds) -> str:
             "</div>"
         )
 
-        parts.append(section_title("SP能力値メイン（上位5頭）", badge("PRED", "#bfdbfe"), "#eff6ff"))
+        parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;'>")
         parts.append(
@@ -431,7 +431,7 @@ def render_html(title: str, preds) -> str:
             "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>印</th>"
             "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>馬番</th>"
             "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:left;'>馬名</th>"
-            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:right;white-space:nowrap;'>総合</th>"
+            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:right;white-space:nowrap;'>指数</th>"
             "</tr></thead><tbody>"
         )
 
