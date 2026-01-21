@@ -479,14 +479,25 @@ def render_result_html(title: str, races_out) -> str:
 
     def esc(s): return _html.escape(str(s))
 
-    def idx_color(v: float) -> str:
-        # ここは「絶対値」色のまま（見にくいなら予想側と同様に文字色だけにしてもOK）
-        if v >= 75: return "#b91c1c"
-        if v >= 68: return "#c2410c"
-        if v >= 60: return "#1d4ed8"
-        if v >= 55: return "#0f766e"
-        return "#374151"
+    def idx_color_by_rank(rank_idx: int, n: int) -> str:
+        """
+        予想側と同じ思想：
+        上位5頭（= n=5想定）の「順位」で文字色の強弱をつける
+        1位ほど濃く、下位ほど薄く。
+        """
+        if n <= 1:
+            return "#111827"  # ほぼ黒
 
+        # 0(1位) -> 1.0, (n-1)(最下位) -> 0.0
+        t = 1.0 - (rank_idx / (n - 1))
+
+        # 濃淡を5段階っぽく丸める（見た目安定）
+        if t >= 0.90: return "#111827"  # 最濃
+        if t >= 0.70: return "#1f2937"
+        if t >= 0.50: return "#374151"
+        if t >= 0.30: return "#6b7280"
+        return "#9ca3af"                # 最薄
+      
     def badge(text: str, bg: str, fg: str="#111827") -> str:
         return (f"<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
                 f"background:{bg};color:{fg};font-weight:900;font-size:12px;letter-spacing:.02em;'>"
