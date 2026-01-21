@@ -685,7 +685,8 @@ def main():
             print(f"[SKIP] {track}: indices not usable -> NO OUTPUT")
             continue
 
-        title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 予想（SP能力値メイン）"
+        title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 予想"
+      
         out = {
             "date": yyyymmdd,
             "place": track,
