@@ -1,4 +1,4 @@
-import os, re, json, time, math
+import os, re, json, time
 from datetime import datetime
 from pathlib import Path
 
@@ -13,47 +13,6 @@ MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 SP_W = float(os.environ.get("SP_W", "1.0"))
 KB_W = float(os.environ.get("KB_W", "0.10"))
 JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
-
-# ===== 混戦度（環境変数で調整可）=====
-KONSEN_NAME = os.environ.get("KONSEN_NAME", "混戦度")
-KONSEN_CV_REF = float(os.environ.get("KONSEN_CV_REF", "0.10"))   # 0.10〜0.18目安（0.08だと0多発しがち）
-KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "70"))  # 例: 70以上を注目
-
-def _mean(xs):
-    return sum(xs) / len(xs) if xs else 0.0
-
-def _stddev_pop(xs):
-    # 母標準偏差（全頭を母集団扱い）
-    if not xs:
-        return 0.0
-    m = _mean(xs)
-    return math.sqrt(sum((x - m) ** 2 for x in xs) / len(xs))
-
-def _clamp(x, lo, hi):
-    return max(lo, min(hi, x))
-
-def calc_konsen_from_scores(scores):
-    """
-    scores: list[float]（全頭のscore）
-    CV(=sd/mean)が小さいほど拮抗 → 混戦度は高くする（0..100）
-    """
-    mu = _mean(scores)
-    sd = _stddev_pop(scores)
-    cv = (sd / mu) if mu > 0 else 0.0
-
-    konsen = 100.0 * (1.0 - _clamp(cv / KONSEN_CV_REF, 0.0, 1.0))
-    konsen = round(konsen, 1)
-
-    return {
-        "name": KONSEN_NAME,
-        "value": konsen,
-        "is_focus": bool(konsen >= KONSEN_FOCUS_TH),
-        "mean": round(mu, 3),
-        "std": round(sd, 3),
-        "cv": round(cv, 5),
-        "cv_ref": KONSEN_CV_REF,
-        "focus_th": KONSEN_FOCUS_TH,
-    }
 
 # keiba.go.jp babaCode（開催判定用）※帯広除外
 BABA_CODE = {
@@ -414,45 +373,104 @@ def parse_kichiuma_sp(html: str):
 
     return sp_by, meta.get("race_name", "")
 
-# ====== HTML（タイトル重複をなくす：render_html内のh2を消した版） ======
+# ====== HTML（見出しを「1R レース名」に + 相対色分け） ======
 def render_html(title: str, preds) -> str:
     import html as _html
+
     def esc(s): return _html.escape(str(s))
+
+    # ---- 相対色分け：上位5頭内の min-max を 0..1 にして濃淡 ----
+    def _clamp01(x: float) -> float:
+        return max(0.0, min(1.0, x))
+
+    def _mix(c1, c2, t: float):
+        # c1/c2: (r,g,b) 0-255
+        t = _clamp01(t)
+        return (
+            int(round(c1[0] + (c2[0] - c1[0]) * t)),
+            int(round(c1[1] + (c2[1] - c1[1]) * t)),
+            int(round(c1[2] + (c2[2] - c1[2]) * t)),
+        )
+
+    def _rgb(rgb):
+        return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+    def _luma(rgb):
+        # 文字色自動（明るさ）
+        r, g, b = rgb
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    # 薄い青 → 濃い青（好みで調整してOK）
+    LO = (239, 246, 255)  # #eff6ff
+    HI = (29, 78, 216)    # #1d4ed8
+
+    def score_style(sc: float, scores_in_race):
+        # 5頭内で相対化
+        if not scores_in_race:
+            return "color:#111827;"
+        mn = min(scores_in_race)
+        mx = max(scores_in_race)
+        if mx == mn:
+            t = 0.55  # 全部同じなら中間
+        else:
+            t = (float(sc) - mn) / (mx - mn)
+
+        # 差が小さいレースでも “ちょい差” が見えるようにカーブ
+        # （tが0.0/1.0に張り付かず、中間が厚くなる）
+        t2 = _clamp01(t ** 0.75)
+
+        bg = _mix(LO, HI, t2)
+        fg = (255, 255, 255) if _luma(bg) < 140 else (17, 24, 39)  # 白 or 黒
+
+        return (
+            f"background:{_rgb(bg)};"
+            f"color:{_rgb(fg)};"
+            "padding:2px 8px;border-radius:10px;display:inline-block;"
+            "min-width:72px;text-align:right;font-variant-numeric:tabular-nums;"
+            "font-weight:900;"
+        )
+
+    def badge(text: str, bg: str, fg: str = "#111827") -> str:
+        return (
+            "<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
+            f"background:{bg};color:{fg};font-weight:900;font-size:12px;letter-spacing:.02em;'>"
+            f"{esc(text)}</span>"
+        )
+
+    def section_title(left: str, right_badge: str, bg: str) -> str:
+        return (
+            "<div style='display:flex;align-items:center;justify-content:space-between;"
+            f"padding:10px 12px;border-radius:12px;background:{bg};margin:10px 0 8px;'>"
+            f"<strong style='font-size:14px;'>{esc(left)}</strong>"
+            f"{right_badge}"
+            "</div>"
+        )
 
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
-
-    # ※ここに <h2>{title}</h2> を置くと「タイトルが二重」になるので置かない
-    # parts.append(f"<h2>{esc(title)}</h2>")  ← 消し
+    parts.append(f"<h2 style='margin:10px 0 10px;'>{esc(title)}</h2>")
 
     for race in preds:
         rno = int(race["race_no"])
         race_name = (race.get("race_name") or "").strip()
         picks = race["picks"]
 
-        k = race.get("konsen") or {}
-        kval = k.get("value", None)
-        is_focus = bool(k.get("is_focus", False))
-
-        extra = ""
-        if isinstance(kval, (int, float)):
-            extra = f"　{k.get('name','混戦度')} {float(kval):.1f}"
-            if is_focus:
-                extra += "　★注目"
-
-        head = f"{rno}R" + (f" {race_name}" if race_name else "") + extra
+        # ★このレースの上位5頭のスコア分布
+        scores_in_race = [float(p.get("score", 0.0)) for p in picks if isinstance(p.get("score", None), (int, float))]
 
         parts.append(
             "<div style='margin:16px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
         )
 
+        head = f"{rno}R" + (f" {race_name}" if race_name else "")
         parts.append(
-            "<div style='display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
+            "<div style='display:flex;align-items:baseline;gap:10px;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
             "</div>"
         )
 
+        parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;'>")
         parts.append(
@@ -467,13 +485,15 @@ def render_html(title: str, preds) -> str:
         for i, p in enumerate(picks):
             bgrow = "#ffffff" if i % 2 == 0 else "#f8fafc"
             sc = float(p.get("score", 0.0))
+            sc_style = score_style(sc, scores_in_race)
+
             parts.append(
                 f"<tr style='background:{bgrow};'>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(p.get('mark',''))}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-variant-numeric:tabular-nums;'>{int(p.get('umaban',0))}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:left;font-weight:750;'>{esc(p.get('name',''))}</td>"
                 f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;'>"
-                f"<strong style='font-variant-numeric:tabular-nums;'>{sc:.2f}</strong>"
+                f"<span style=\"{sc_style}\">{sc:.2f}</span>"
                 f"</td>"
                 f"</tr>"
             )
@@ -563,7 +583,6 @@ def main():
 
     print(f"[INFO] DATE={yyyymmdd}")
     print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
-    print(f"[INFO] KONSEN name={KONSEN_NAME} CV_REF={KONSEN_CV_REF} FOCUS_TH={KONSEN_FOCUS_TH}")
 
     active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
@@ -572,7 +591,7 @@ def main():
     SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     for track in active:
-        track_id = BABA_CODE.get(track)
+        track_id = BABA_CODE.get(track)  # 吉馬のidもこの数字でOK（例: 船橋=19 / 笠松=23）
         code = KEIBABLOOD_CODE.get(track)
         if not track_id or not code:
             print(f"[SKIP] {track}: code missing")
@@ -668,6 +687,7 @@ def main():
                 sp = float(r["sp_est"])
                 base = float(r["base_index"])
                 add = float(r["jockey_add"])
+
                 score = (SP_W * sp) + (KB_W * base) + (JOCKEY_W * add)
 
                 horses_scored.append({
@@ -686,11 +706,6 @@ def main():
                 track_incomplete = True
                 break
 
-            # ---- 混戦度（全頭スコアで計算）----
-            scores_all = [float(h["score"]) for h in horses_scored]
-            konsen = calc_konsen_from_scores(scores_all)
-
-            # ---- 並べ替え→上位5頭 ----
             horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
             top5 = horses_scored[:5]
 
@@ -712,8 +727,7 @@ def main():
             preds.append({
                 "race_no": int(rno),
                 "race_name": race_name,
-                "picks": picks,
-                "konsen": konsen,
+                "picks": picks
             })
 
             time.sleep(0.05)
@@ -732,11 +746,6 @@ def main():
             "predictions": preds,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "weights": {"SP_W": SP_W, "KB_W": KB_W, "JOCKEY_W": JOCKEY_W},
-            "konsen_config": {
-                "name": KONSEN_NAME,
-                "cv_ref": KONSEN_CV_REF,
-                "focus_th": KONSEN_FOCUS_TH,
-            },
             "source": {
                 "keibablood_url": picked_url,
                 "keibablood_series_used": used_series,
