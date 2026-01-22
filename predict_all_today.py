@@ -415,11 +415,6 @@ def parse_kichiuma_sp(html: str):
 
     return sp_by, meta.get("race_name", "")
 
-# ====== HTML（見出しを「1R レース名」に + 相対色分け + SVG簡易グラフ） ======
-def render_html(title: str, preds) -> str:
-    import html as _html
-    def esc(s): return _html.escape(str(s))
-
     # ---- 相対色分け：上位5頭内の min-max を 0..1 にして濃淡 ----
     def _clamp01(x: float) -> float:
         return max(0.0, min(1.0, x))
@@ -579,47 +574,6 @@ def render_html(title: str, preds) -> str:
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
             "</div>"
         )
-
-        # ---- 簡易グラフ（全頭スコア棒） ----
-        chart_items = race.get("chart_items") or []
-        if chart_items:
-            parts.append("<div style='margin:10px 0 6px;padding:10px;border:1px solid #e5e7eb;border-radius:12px;background:#f9fafb;'>")
-            parts.append(svg_score_bars(chart_items, title_text="全頭スコア（右ほど高い）"))
-            parts.append("</div>")
-
-        parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
-        parts.append("<div style='overflow-x:auto;'>")
-        parts.append("<table style='width:100%;border-collapse:collapse;'>")
-        parts.append(
-            "<thead><tr>"
-            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>印</th>"
-            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:center;white-space:nowrap;'>馬番</th>"
-            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:left;'>馬名</th>"
-            "<th style='border-bottom:2px solid #1d4ed8;padding:8px;text-align:right;white-space:nowrap;'>指数</th>"
-            "</tr></thead><tbody>"
-        )
-
-        for i, p in enumerate(picks):
-            bgrow = "#ffffff" if i % 2 == 0 else "#f8fafc"
-            sc = float(p.get("score", 0.0))
-            sc_style = score_style(sc, scores_in_race)
-
-            parts.append(
-                f"<tr style='background:{bgrow};'>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-weight:900;'>{esc(p.get('mark',''))}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:center;font-variant-numeric:tabular-nums;'>{int(p.get('umaban',0))}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:left;font-weight:750;'>{esc(p.get('name',''))}</td>"
-                f"<td style='padding:8px;border-bottom:1px solid #dbeafe;text-align:right;'>"
-                f"<span style=\"{sc_style}\">{sc:.2f}</span>"
-                f"</td>"
-                f"</tr>"
-            )
-
-        parts.append("</tbody></table></div>")
-        parts.append("</div>")
-
-    parts.append("</div>")
-    return "\n".join(parts)
 
 # ===== 推定まわり（SP欠損をKBで「周りに合わせて」埋める） =====
 def clamp(x, lo, hi):
