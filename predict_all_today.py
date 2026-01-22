@@ -448,7 +448,6 @@ def render_html(title: str, preds) -> str:
 
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
-    parts.append(f"<h2 style='margin:10px 0 10px;'>{esc(title)}</h2>")
 
     for race in preds:
         rno = int(race["race_no"])
