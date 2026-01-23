@@ -486,155 +486,54 @@ def parse_top3_from_racemark(html_text: str):
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
 def parse_sanrenpuku_refunds(html_text: str):
     """
+    強化版（三連複 払戻）
+    - ヘッダ列に依存しない（keiba.go.jpのHTML揺れに強い）
+    - 「三連複」を含む行を総当たりで拾う
+    - 組番(3つの数字) と 払戻(数字) を同一行から抽出
     return: list[ {combo:(a,b,c), payout:int} ]  (payout=100円あたり)
-
-    改善点：
-    - 同着/特払などで「三連複の組番が1セルに複数」あるケースを拾う
-    - 払戻も複数あるケースに対応（組番と払戻をなるべく1対1で対応付け）
-    - それでも合わない時は “取れる範囲で” ペア化（当たってるのに0円を避ける）
     """
-    refund_debug = os.environ.get("REFUND_DEBUG", "").strip() == "1"
-
     soup = BeautifulSoup(html_text, "lxml")
-    tables = soup.find_all("table")
-    best = None
-    best_score = -1
-
-    for t in tables:
-        head = t.find("tr")
-        if not head:
-            continue
-        hs = [c.get_text(" ", strip=True) for c in head.find_all(["th", "td"])]
-        hjoin = " ".join(hs)
-        score = 0
-        if "式別" in hjoin: score += 3
-        if ("払戻" in hjoin) or ("払戻金" in hjoin): score += 3
-        if "人気" in hjoin: score += 1
-        if ("組番" in hjoin) or ("組" in hjoin) or ("馬番" in hjoin): score += 1
-        if score > best_score:
-            best_score = score
-            best = t
-
-    if not best or best_score < 4:
-        return []
-
-    rows = best.find_all("tr")
-    if len(rows) < 2:
-        return []
-
-    headers = [c.get_text(" ", strip=True) for c in rows[0].find_all(["th", "td"])]
-
-    def find_col(keys, hdrs):
-        for i, h in enumerate(hdrs):
-            for k in keys:
-                if k in h:
-                    return i
-        return None
-
-    c_type = find_col(["式別", "式"], headers)
-    c_kumi = find_col(["組番", "組", "馬番"], headers)
-    c_pay  = find_col(["払戻", "払戻金", "払戻額", "金額"], headers)
-
-    if c_type is None:
-        return []
-
-    # まれに2段ヘッダ
-    if c_kumi is None or c_pay is None:
-        if len(rows) >= 3:
-            headers2 = [c.get_text(" ", strip=True) for c in rows[1].find_all(["th", "td"])]
-            c_kumi2 = find_col(["組番", "組", "馬番"], headers2)
-            c_pay2  = find_col(["払戻", "払戻金", "払戻額", "金額"], headers2)
-            if c_kumi is None and c_kumi2 is not None:
-                c_kumi = c_kumi2
-            if c_pay is None and c_pay2 is not None:
-                c_pay = c_pay2
-
-    if c_kumi is None or c_pay is None:
-        return []
-
-    def extract_combos(text: str):
-        """
-        例:
-          "1-2-3"
-          "1 2 3"
-          "1-2-3  4-5-6"
-          "1-2-3\n4-5-6"
-        みたいなのを全部拾って combo list を返す
-        """
-        s = (text or "").replace("－", "-").replace("―", "-").replace("—", "-")
-        s = re.sub(r"\s+", " ", s).strip()
-
-        combos = []
-        # 3つの数字が何らかの区切りで並ぶパターンを全部拾う
-        for a, b, c in re.findall(r"(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})", s):
-            aa, bb, cc = sorted([int(a), int(b), int(c)])
-            combos.append((aa, bb, cc))
-
-        # 重複除去（同じcomboが複数回出るHTMLもある）
-        uniq = []
-        seen = set()
-        for x in combos:
-            if x not in seen:
-                seen.add(x)
-                uniq.append(x)
-        return uniq
-
-    def extract_payouts(text: str):
-        """
-        "960円" "5,930円" "960 5930" などから全部数字を拾う
-        """
-        s = (text or "")
-        nums = re.findall(r"[\d,]+", s)
-        outs = []
-        for n in nums:
-            try:
-                outs.append(int(n.replace(",", "")))
-            except:
-                pass
-        return outs
 
     out = []
-    for tr in rows[1:]:
-        cells = tr.find_all(["th", "td"])
-        if not cells:
-            continue
-        vals = [c.get_text(" ", strip=True) for c in cells]
-        if len(vals) <= max(c_type, c_kumi, c_pay):
-            continue
 
-        bet_type = vals[c_type].strip()
-        bet_type_n = re.sub(r"\s+", "", bet_type)
-        if "三連複" not in bet_type_n:
-            continue
+    # すべてのテーブルを総当たり
+    for t in soup.find_all("table"):
+        for tr in t.find_all("tr"):
+            # 行のセル文字列を取る
+            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
+            if not cells:
+                continue
 
-        kumi_raw = vals[c_kumi].strip()
-        pay_raw  = vals[c_pay].strip()
+            row_txt = " ".join(cells)
+            row_txt_n = re.sub(r"\s+", "", row_txt)
 
-        combos = extract_combos(kumi_raw)
-        pays = extract_payouts(pay_raw)
+            # 三連複行だけ拾う（表記ブレ吸収）
+            if "三連複" not in row_txt_n:
+                continue
 
-        if refund_debug:
-            print(f"[REFUND_DEBUG] 三連複 row: kumi='{kumi_raw}' -> combos={combos}")
-            print(f"[REFUND_DEBUG] 三連複 row: pay ='{pay_raw}'  -> pays={pays}")
+            # 組番：この行から数字3つ拾う
+            nums = re.findall(r"\d+", row_txt)
+            if len(nums) < 3:
+                continue
+            a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
+            combo = (a, b, c)
 
-        if not combos or not pays:
-            continue
+            # 払戻：この行から「カンマ付き金額」を拾う（100円あたり）
+            # 例: "5,930円" / "5930" どちらもOK
+            m = re.search(r"(\d[\d,]*)\s*円?", row_txt)
+            if not m:
+                continue
+            payout = int(m.group(1).replace(",", ""))
 
-        # できるだけ1対1で対応付け
-        if len(pays) == len(combos):
-            for i in range(len(combos)):
-                out.append({"combo": combos[i], "payout": int(pays[i])})
-        elif len(pays) == 1 and len(combos) > 1:
-            # 払戻が1個しか取れないときは全comboに同じ払戻を付ける（0円回避）
-            for c in combos:
-                out.append({"combo": c, "payout": int(pays[0])})
-        else:
-            # 長さが合わないときは取れる範囲でペア化
-            n = min(len(pays), len(combos))
-            for i in range(n):
-                out.append({"combo": combos[i], "payout": int(pays[i])})
+            out.append({"combo": combo, "payout": payout})
 
-    return out
+    # 同着などで同じcomboが重複する場合があるので合算して正規化
+    merged = {}
+    for it in out:
+        cb = tuple(it["combo"])
+        merged[cb] = merged.get(cb, 0) + int(it["payout"])
+
+    return [{"combo": k, "payout": v} for k, v in merged.items()]
 
 def calc_trifecta_box_invest(unit: int) -> int:
     # 5頭BOX -> C(5,3)=10点
@@ -1063,7 +962,10 @@ def main():
                 refund_url = build_refund_url_fallback(baba, yyyymmdd, rno)
             refund_html = fetch(refund_url, debug=debug) if refund_url else ""
             refunds = parse_sanrenpuku_refunds(refund_html) if refund_html else []
-
+            if REFUND_DEBUG:
+                print(f"[REFUND_DEBUG] {track} {rno}R refund_html_has_sanrenpuku={'三連複' in (refund_html or '')}")
+                print(f"[REFUND_DEBUG] {track} {rno}R refunds_found={len(refunds)} refunds={refunds[:5]}")
+            
             if REFUND_DEBUG:
                 print(f"[REFUND_DEBUG] {track} {rno}R refund_url={refund_url}")
                 print(f"[REFUND_DEBUG] {track} {rno}R refunds_found={len(refunds)} refunds={refunds[:5]}")
