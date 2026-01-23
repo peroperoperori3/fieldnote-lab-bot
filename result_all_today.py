@@ -716,7 +716,7 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             "<div style='margin:14px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
             "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;'>"
-            f"<div style='font-size:16px;font-weight:900;color:#111827;'>注目レース（三連複BOX） 収支サマリ</div>"
+            f"<div style='font-size:16px;font-weight:900;color:#111827;'>今回の収支サマリ</div>"
             f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{profit_badge}{roi_badge}</div>"
             "</div>"
             "<div style='margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;'>"
