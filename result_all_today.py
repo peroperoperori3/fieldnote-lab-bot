@@ -1030,9 +1030,7 @@ def main():
             result_top3 = parse_top3_from_racemark(rm_html) if rm_html else []
 
             # keiba.go.jp 払戻（三連複）
-            refund_url = try_parse_refund_url_from_racemark_html(rm_html) if rm_html else None
-            if not refund_url:
-                refund_url = build_refund_url_fallback(baba, yyyymmdd, rno)
+            refund_url = try_parse_refund_url_from_racemark_html(rm_html, baba, yyyymmdd, rno)
             refund_html = fetch(refund_url, debug=debug) if refund_url else ""
             refunds = parse_sanrenpuku_refunds(refund_html) if refund_html else []
             if REFUND_DEBUG:
