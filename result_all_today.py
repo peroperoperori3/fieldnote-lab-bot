@@ -472,56 +472,66 @@ def parse_top3_from_racemark(html_text: str):
 # ====== NEW: RaceMarkTableから三連複払戻を抜く ======
 def parse_sanrenpuku_refunds_from_racemark(html_text: str):
     """
-    RaceMarkTable内の払戻ブロックから「三連複」を抽出。
-    return: list[ {combo:(a,b,c), payout:int} ] (payout=100円あたり想定)
-    ※ keiba.go.jp の表示は通常「円」で100円あたり。
+    RaceMarkTable内の払戻ブロックから「三連複」を抽出（組番セル限定で拾う）
+    return: list[ {combo:(a,b,c), payout:int} ] (payout=100円あたり)
     """
     if not html_text:
         return []
 
     soup = BeautifulSoup(html_text, "lxml")
-
     out = []
 
-    # 1) まず table/tr を総当たりして「三連複」の行を探す
+    # 「三連複」を含む行を探す
     for tr in soup.find_all("tr"):
         row_txt = tr.get_text(" ", strip=True)
         if "三連複" not in row_txt:
             continue
 
-        # 組番(3つ) + 払戻(円) を行から拾う
-        nums = re.findall(r"\d{1,2}", row_txt)
-        # 払戻っぽい「1,230」などを拾う（最後の大きい数を払戻とみなす）
-        pays = re.findall(r"\d[\d,]{2,}", row_txt)
+        tds = [td.get_text(" ", strip=True) for td in tr.find_all(["th", "td"])]
+        if not tds:
+            continue
 
-        if len(nums) >= 3 and len(pays) >= 1:
-            a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
-            payout = int(pays[-1].replace(",", ""))
-            out.append({"combo": (a, b, c), "payout": payout})
+        # この行の中で「円」を含むセルを払戻とみなす
+        payout = None
+        for cell in tds:
+            if "円" in cell:
+                m = re.search(r"([\d,]+)", cell)
+                if m:
+                    payout = int(m.group(1).replace(",", ""))
+                    break
 
-    if out:
-        # 重複除去
-        uniq = {}
-        for x in out:
-            uniq[(x["combo"], x["payout"])] = x
-        return list(uniq.values())
+        if payout is None:
+            continue
 
-    # 2) それでも無ければテキスト全体の正規表現で拾う（最終保険）
-    text = soup.get_text("\n", strip=True)
-    rgx = re.compile(
-        r"三連複[\s\S]{0,200}?"
-        r"(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})"
-        r"[\s\S]{0,120}?"
-        r"([\d,]+)\s*円"
-    )
-    found = []
-    for m in rgx.finditer(text):
-        a, b, c = sorted([int(m.group(1)), int(m.group(2)), int(m.group(3))])
-        payout = int(m.group(4).replace(",", ""))
-        found.append({"combo": (a, b, c), "payout": payout})
+        # 組番っぽいセル（3つの馬番が入ってそう）を探す
+        kumi_candidates = []
+        for cell in tds:
+            # 例: "1-2-3" / "1 2 3" / "1－2－3" みたいなのを想定
+            if re.search(r"\d{1,2}\D+\d{1,2}\D+\d{1,2}", cell):
+                kumi_candidates.append(cell)
 
+        if not kumi_candidates:
+            # 仕方ないので行全体から拾うが、馬番は1〜18のみ&3つに限定
+            kumi_candidates = [row_txt]
+
+        # 候補セルから「1〜18の数字を3つだけ」抜く
+        combo = None
+        for cell in kumi_candidates:
+            nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", cell)]
+            nums = [n for n in nums if 1 <= n <= 18]
+            if len(nums) >= 3:
+                a, b, c = sorted(nums[:3])
+                combo = (a, b, c)
+                break
+
+        if combo is None:
+            continue
+
+        out.append({"combo": combo, "payout": payout})
+
+    # 重複除去
     uniq = {}
-    for x in found:
+    for x in out:
         uniq[(x["combo"], x["payout"])] = x
     return list(uniq.values())
 
