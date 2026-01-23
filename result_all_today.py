@@ -1089,33 +1089,36 @@ def main():
 
                 hit_combo_list = []
                 if len(result_top3) >= 3:
-                    a, b, c = sorted([int(result_top3[0]["umaban"]), int(result_top3[1]["umaban"]), int(result_top3[2]["umaban"])])
+                    a, b, c = sorted([
+                        int(result_top3[0]["umaban"]),
+                        int(result_top3[1]["umaban"]),
+                        int(result_top3[2]["umaban"]),
+                    ])
                     combo = (a, b, c)
-                    # BOXの10点に含まれるか
                     box_set = set(top5_umaban)
                     if (a in box_set) and (b in box_set) and (c in box_set):
                         hit_combo_list = [combo]
 
-            if REFUND_DEBUG:
-                print(f"[REFUND_DEBUG] {track} {rno}R top3={result_top3}")
-                print(f"[REFUND_DEBUG] {track} {rno}R box_umaban={sorted(top5_umaban)}")
-                print(f"[REFUND_DEBUG] {track} {rno}R hit_combo_list={hit_combo_list}")
+                if REFUND_DEBUG:
+                    print(f"[REFUND_DEBUG] {track} {rno}R top3={result_top3}")
+                    print(f"[REFUND_DEBUG] {track} {rno}R box_umaban={sorted(top5_umaban)}")
+                    print(f"[REFUND_DEBUG] {track} {rno}R hit_combo_list={hit_combo_list}")
 
-            pay = calc_payout_for_box(hit_combo_list, refunds, BET_UNIT)
+                pay = calc_payout_for_box(hit_combo_list, refunds, BET_UNIT)
 
-            if REFUND_DEBUG:
-                print(f"[REFUND_DEBUG] {track} {rno}R pay={pay} (unit={BET_UNIT})")
+                if REFUND_DEBUG:
+                    print(f"[REFUND_DEBUG] {track} {rno}R pay={pay} (unit={BET_UNIT})")
 
-            bet["payout"] = int(pay)
-            bet["profit"] = int(pay - inv)
-            bet["hits"] = 1 if pay > 0 else 0
+                bet["payout"] = int(pay)
+                bet["profit"] = int(pay - inv)
+                bet["hits"] = 1 if pay > 0 else 0
 
-
-                # 合算
+                # ★ 合算は必ずこのifの中 ★
                 pnl_total["races"] += 1
                 pnl_total["hits"] += bet["hits"]
                 pnl_total["invest"] += inv
                 pnl_total["payout"] += int(pay)
+
 
             races_out.append({
                 "track": track,
