@@ -92,7 +92,7 @@ jobs:
       - name: Run result (try)
         if: ${{ inputs.mode == 'result' }}
         run: |
-          python result_all_today.py || true
+          REFUND_DEBUG=1 python result_all_today.py || true
 
       - name: Check result outputs
         id: chk_result
