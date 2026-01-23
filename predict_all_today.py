@@ -19,8 +19,8 @@ KONSEN_NAME = os.environ.get("KONSEN_NAME", "混戦度")
 # 「1位-2位差」「1位-5位差」がこの値なら 50点くらい、という基準（小さいほど混戦度UP）
 KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
-# 注目判定（厳しくするなら上げる）
-KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "70"))
+# ★デフォルトを 50 に変更（環境変数が来なかった時の保険）
+KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "50"))
 # デバッグ（1でギャップ等をログ）
 KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
 
@@ -36,7 +36,6 @@ def _sig_score_from_gap(gap: float, mid: float) -> float:
     """
     gap = max(0.0, float(gap))
     mid = max(1e-9, float(mid))
-    # ここが “案3” の肝：0に潰れにくい形
     # gap=mid -> 0.5、gap=0 -> 1.0、gapが大きいと 0に近づく
     return 1.0 / (1.0 + (gap / mid))
 
@@ -503,11 +502,12 @@ def render_html(title: str, preds) -> str:
         )
 
     def section_title(left: str, right_badge: str, bg: str) -> str:
+        # ★右側にバッジを寄せる（PREDをここに置くため）
         return (
             "<div style='display:flex;align-items:center;justify-content:space-between;"
             f"padding:10px 12px;border-radius:12px;background:{bg};margin:10px 0 8px;'>"
             f"<strong style='font-size:14px;'>{esc(left)}</strong>"
-            f"{right_badge}"
+            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{right_badge}</div>"
             "</div>"
         )
 
@@ -521,7 +521,7 @@ def render_html(title: str, preds) -> str:
 
         scores_in_race = [float(p.get("score", 0.0)) for p in picks if isinstance(p.get("score", None), (int, float))]
 
-        # 混戦バッジ（フラッグ）
+        # 混戦バッジ（レース名行の右端）
         k = race.get("konsen") or {}
         kval = k.get("value", None)
         is_focus = bool(k.get("is_focus", False))
@@ -541,16 +541,17 @@ def render_html(title: str, preds) -> str:
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
         )
 
-        # 見出し行（左：レース名 / 右：バッジ群）
-        right_badges = badge("PRED", "#bfdbfe") + ("&nbsp;" + konsen_badge if konsen_badge else "")
+        # ★レース名行：右端は混戦度だけ
         parts.append(
             "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
-            f"<div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>{right_badges}</div>"
+            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{konsen_badge}</div>"
             "</div>"
         )
 
-        parts.append(section_title("指数上位5頭", "", "#eff6ff"))
+        # ★PREDは「指数上位5頭」行の右端
+        parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
+
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;'>")
         parts.append(
@@ -672,7 +673,7 @@ def main():
     SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     for track in active:
-        track_id = BABA_CODE.get(track)  # 吉馬のidもこの数字でOK（例: 船橋=19 / 笠松=23）
+        track_id = BABA_CODE.get(track)
         code = KEIBABLOOD_CODE.get(track)
         if not track_id or not code:
             print(f"[SKIP] {track}: code missing")
@@ -710,7 +711,6 @@ def main():
         track_incomplete = False
 
         for rno in sorted(kb_races.keys()):
-            # ---- 吉馬取得（ここが取れなかったら開催場スキップ）----
             fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
             fp_html = fetch(fp_url, debug=False)
             if not fp_html:
@@ -720,7 +720,6 @@ def main():
 
             sp_by_umaban, race_name = parse_kichiuma_sp(fp_html)
 
-            # ---- KB側の馬リスト作成（SP欠損は None）----
             rows = []
             for h in kb_races[rno]:
                 u = int(h["umaban"])
@@ -730,7 +729,7 @@ def main():
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
                 add = jockey_add_points(*rates) if rates else 0.0
 
-                sp = sp_by_umaban.get(u)  # Noneなら欠損
+                sp = sp_by_umaban.get(u)
 
                 rows.append({
                     "umaban": u,
@@ -741,7 +740,6 @@ def main():
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
-            # ---- SP推定器を作成して欠損を埋める ----
             est_sp, est_info = estimate_sp_factory(rows, debug=False)
 
             missing = [r["umaban"] for r in rows if r["sp_raw"] is None]
@@ -751,10 +749,6 @@ def main():
                 else:
                     r["sp_est"] = float(r["sp_raw"])
 
-            if missing and (debug or KONSEN_DEBUG):
-                print(f"[INFO] {track} {rno}R: SP missing -> estimated for umaban={missing} (pairs={est_info['pairs_n']}, linear={est_info['has_linear']})")
-
-            # ---- スコア計算（SPメイン）----
             horses_scored = []
             for r in rows:
                 sp = float(r["sp_est"])
@@ -779,12 +773,10 @@ def main():
                 track_incomplete = True
                 break
 
-            # ---- 上位5頭 ----
             horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
             top5 = horses_scored[:5]
 
-            # ---- 混戦度（案3：上位5頭のギャップから）----
-            top5_scores = [float(h["score"]) for h in top5]  # already desc
+            top5_scores = [float(h["score"]) for h in top5]
             konsen = calc_konsen_gap(top5_scores)
 
             if KONSEN_DEBUG:
@@ -797,7 +789,6 @@ def main():
                     "umaban": int(hh["umaban"]),
                     "name": hh["name"],
                     "score": float(hh["score"]),
-                    # デバッグ用（wp側表示はしない）
                     "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
                     "jockey": hh.get("jockey", ""),
