@@ -7,6 +7,10 @@ on:
         description: "predict or result"
         required: true
         default: "predict"
+      date:
+        description: "YYYYMMDD (空ならJST今日). 例: 20260123"
+        required: false
+        default: ""
 
 jobs:
   run:
@@ -19,9 +23,16 @@ jobs:
       WP_POST_STATUS: ${{ secrets.WP_POST_STATUS }}
 
     steps:
-      - name: Set DATE (JST)
+      - name: Set DATE (JST or input)
         shell: bash
-        run: echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
+        run: |
+          if [ -n "${{ inputs.date }}" ]; then
+            echo "DATE=${{ inputs.date }}" >> $GITHUB_ENV
+            echo "[INFO] DATE from input: ${{ inputs.date }}"
+          else
+            echo "DATE=$(TZ=Asia/Tokyo date +%Y%m%d)" >> $GITHUB_ENV
+            echo "[INFO] DATE = JST today"
+          fi
 
       - name: Checkout
         uses: actions/checkout@v4
