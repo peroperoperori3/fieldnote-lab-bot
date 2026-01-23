@@ -1,4 +1,4 @@
-import os, json, glob
+import os, json, glob, re
 import requests
 
 WP_BASE = os.environ["WP_BASE"].rstrip("/")
@@ -60,16 +60,50 @@ def create_post_if_not_exists(slug: str, title: str, html: str, status: str, cat
     c.raise_for_status()
     return "created", c.json().get("link")
 
+# ==========================
+# 追加：slug/title 安定化（最低限）
+# ==========================
+TRACK_SLUG = {
+    "門別": "monbetsu", "盛岡": "morioka", "水沢": "mizusawa", "浦和": "urawa",
+    "船橋": "funabashi", "大井": "ooi", "川崎": "kawasaki", "金沢": "kanazawa",
+    "笠松": "kasamatsu", "名古屋": "nagoya", "園田": "sonoda", "姫路": "himeji",
+    "高知": "kochi", "佐賀": "saga",
+}
+
+def ymd_dot(yyyymmdd: str) -> str:
+    s = re.sub(r"\D", "", str(yyyymmdd or ""))
+    if len(s) == 8:
+        return f"{s[0:4]}.{s[4:6]}.{s[6:8]}"
+    return str(yyyymmdd)
+
+def safe_track_slug(place: str, place_code: str = "") -> str:
+    # place_code があればそれ優先（数字/英字想定）
+    pc = str(place_code or "").strip()
+    if pc:
+        s = re.sub(r"[^a-zA-Z0-9]+", "-", pc).strip("-").lower()
+        if s:
+            return s
+
+    p = str(place or "").strip()
+    if p in TRACK_SLUG:
+        return TRACK_SLUG[p]
+
+    # fallback: 英数字だけ残す（日本語は消えるけど空は防ぐ）
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", p).strip("-").lower()
+    return s if s else "track"
+
 def main():
     # MODEで対象ファイルを決める
     if MODE == "predict":
         prefix = "predict_"
         slug_prefix = "predict"
         category_name = "競馬予想"
+        mode_label = "予想"
     else:
         prefix = "result_"
         slug_prefix = "result"
         category_name = "競馬結果"
+        mode_label = "結果"
 
     files = sorted(glob.glob(f"output/{prefix}*.json"))
     if not files:
@@ -87,16 +121,19 @@ def main():
             data = json.load(f)
 
         date = data.get("date")              # yyyymmdd
-        place = data.get("place") or data.get("track")
-        place_code = data.get("place_code") or ""
+        place = data.get("place") or data.get("track") or data.get("venue")
+        place_code = data.get("place_code") or data.get("track_code") or ""
 
         html_path = json_path.replace(".json", ".html")
         with open(html_path, encoding="utf-8") as f:
             html = f.read()
 
-        # 1日1場1記事で固定
-        slug = f"{slug_prefix}-{date}-{place_code}"
-        title = data.get("title") or f"{date} {place} {MODE}"
+        # 1日1場1記事で固定（slug重複しないように track_slug を必ず入れる）
+        track_slug = safe_track_slug(place, place_code)
+        slug = f"{slug_prefix}-{re.sub(r'\\D','',str(date or ''))}-{track_slug}"
+
+        # タイトルを統一：2026.01.23 笠松競馬 結果（余計な文字なし）
+        title = f"{ymd_dot(date)} {place}競馬 {mode_label}"
 
         print(f"[DEBUG] json_path = {json_path}")
         print(f"[DEBUG] slug = {slug}")
