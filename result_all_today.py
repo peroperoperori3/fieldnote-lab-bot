@@ -486,20 +486,42 @@ def parse_top3_from_racemark(html_text: str):
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
 def parse_sanrenpuku_refunds(html_text: str):
     """
-    強化版（三連複 払戻）
-    - ヘッダ列に依存しない（keiba.go.jpのHTML揺れに強い）
-    - 「三連複」を含む行を総当たりで拾う
-    - 組番(3つの数字) と 払戻(数字) を同一行から抽出
-    return: list[ {combo:(a,b,c), payout:int} ]  (payout=100円あたり)
+    強化版（三連複 払戻）※金額取り違え防止
+    - 「三連複」行を拾う
+    - 組番は行全体から数字3つ
+    - 払戻は「円」または「,」を含むセルを優先して金額抽出（人気=1等を拾わない）
+    return: list[ {combo:(a,b,c), payout:int} ] (payout=100円あたり)
     """
     soup = BeautifulSoup(html_text, "lxml")
-
     out = []
 
-    # すべてのテーブルを総当たり
+    def pick_payout_from_cells(cells):
+        # まず「円」や「,」を含むセルを金額候補として優先
+        cand = []
+        for s in cells:
+            ss = str(s)
+            if ("円" in ss) or ("," in ss):
+                cand.append(ss)
+
+        # 候補が無ければセル全部を候補に（最後の保険）
+        if not cand:
+            cand = [str(s) for s in cells]
+
+        # 候補の中から「4桁以上 or カンマ付き」を優先して拾う
+        # 例: 5,930 / 5930 / 12,340
+        for ss in cand:
+            m = re.search(r"(\d{1,3}(?:,\d{3})+)", ss)
+            if m:
+                return int(m.group(1).replace(",", ""))
+        for ss in cand:
+            m = re.search(r"(\d{4,})", ss)
+            if m:
+                return int(m.group(1))
+        # 最後に「数字(1〜3桁)」しか無い場合は誤爆しやすいので拾わない
+        return None
+
     for t in soup.find_all("table"):
         for tr in t.find_all("tr"):
-            # 行のセル文字列を取る
             cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
             if not cells:
                 continue
@@ -507,27 +529,23 @@ def parse_sanrenpuku_refunds(html_text: str):
             row_txt = " ".join(cells)
             row_txt_n = re.sub(r"\s+", "", row_txt)
 
-            # 三連複行だけ拾う（表記ブレ吸収）
             if "三連複" not in row_txt_n:
                 continue
 
-            # 組番：この行から数字3つ拾う
+            # 組番（数字3つ）
             nums = re.findall(r"\d+", row_txt)
             if len(nums) < 3:
                 continue
             a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
             combo = (a, b, c)
 
-            # 払戻：この行から「カンマ付き金額」を拾う（100円あたり）
-            # 例: "5,930円" / "5930" どちらもOK
-            m = re.search(r"(\d[\d,]*)\s*円?", row_txt)
-            if not m:
+            payout = pick_payout_from_cells(cells)
+            if payout is None:
                 continue
-            payout = int(m.group(1).replace(",", ""))
 
             out.append({"combo": combo, "payout": payout})
 
-    # 同着などで同じcomboが重複する場合があるので合算して正規化
+    # 同じcomboが複数あれば合算（同着など）
     merged = {}
     for it in out:
         cb = tuple(it["combo"])
