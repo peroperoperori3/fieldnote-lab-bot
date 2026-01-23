@@ -536,7 +536,6 @@ def render_result_html(title: str, races_out) -> str:
 
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
-    parts.append(f"<h2 style='margin:10px 0 10px;'>{esc(title)}</h2>")
 
     for r in races_out:
         rno = int(r["race_no"])
