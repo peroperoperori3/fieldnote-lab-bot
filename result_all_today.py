@@ -582,18 +582,26 @@ def calc_trifecta_box_invest(unit: int) -> int:
 
 def calc_payout_for_box(hit_combo_list, refunds, unit: int) -> int:
     """
-    refunds: list of {combo,payout(100円)}
-    unit: 1点の購入額
-    同着等で払い戻しが複数のとき：該当するcombo分を合算
+    三連複BOX用・安全版
+    - 組番の順序違いを完全無視
+    - 同着で複数ある場合も全部合算
     """
-    if not hit_combo_list:
+    if not hit_combo_list or not refunds:
         return 0
+
+    # BOXで当たった組（setで保持）
+    hit_sets = {frozenset(c) for c in hit_combo_list}
+
     payout_total = 0
     for rf in refunds:
-        combo = tuple(rf.get("combo", ()))
-        if combo in hit_combo_list:
+        combo = rf.get("combo")
+        if not combo or len(combo) != 3:
+            continue
+
+        if frozenset(combo) in hit_sets:
             payout100 = int(rf.get("payout", 0))
             payout_total += int(payout100 * (unit / 100))
+
     return payout_total
 
 def try_parse_refund_url_from_racemark_html(rm_html: str):
