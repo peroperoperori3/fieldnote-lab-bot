@@ -472,39 +472,41 @@ def parse_top3_from_racemark(html_text: str):
 # ====== NEW: RaceMarkTableから三連複払戻を抜く ======
 def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
     """
-    RaceMarkTable 内の「三連複」払戻を拾う（超堅牢版）
-
-    ✅ やること：
-    - ページ内の全 tr を走査
-    - 「三連複」を含む行だけ対象
-    - その行の中から「組番(1-2-3)」と「払戻(1,180円など)」を抽出
-
-    return: list[ {"combo": (a,b,c), "payout": int} ]  # payout=100円あたり
+    RaceMarkTable 内の「三連複」払戻を拾う（列位置固定で誤爆を潰す版）
+    - tr を走査して「式別=三連複」の行を見つける
+    - そのセルより右側だけを材料に「組番」と「払戻(円)」を抽出する
     """
     if not html_text:
         return []
 
     soup = BeautifulSoup(html_text, "lxml")
-
     out = []
     seen = set()
 
-    # 1) まずは行(tr)ベースで「三連複」を含む行を拾う（これが本命）
     for tr in soup.find_all("tr"):
         cells = tr.find_all(["th", "td"])
         if not cells:
             continue
 
         texts = [c.get_text(" ", strip=True) for c in cells]
-        joined = " ".join(texts)
 
-        if "三連複" not in joined:
+        # 1) 「三連複」を含むセル位置を探す（式別セル）
+        idx_type = None
+        for i, t in enumerate(texts):
+            if "三連複" in re.sub(r"\s+", "", t):
+                idx_type = i
+                break
+        if idx_type is None:
             continue
 
-        # 組番候補（"1-2-3" "1 2 3" "1→2→3" みたいなのも拾う）
+        # 2) 以降（右側）だけを見る（誤爆しやすい左側の数字は捨てる）
+        right_texts = texts[idx_type+1:] if idx_type+1 < len(texts) else []
+        if not right_texts:
+            continue
+
+        # 3) 組番（1-2-3）を右側から探す
         combo = None
-        for t in texts:
-            # 1-2-3 / 1–2–3 / 1 2 3 / 1→2→3 / 1→2-3 などを数字だけ抽出
+        for t in right_texts:
             nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", t)]
             nums = [n for n in nums if 1 <= n <= 18]
             if len(nums) >= 3:
@@ -512,22 +514,22 @@ def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
                 if len({a, b, c}) == 3:
                     combo = (a, b, c)
                     break
-
         if combo is None:
             continue
 
-        # 払戻候補：カンマ区切り or 3桁以上の数字を優先
+        # 4) 払戻（円）を右側から探す（「円」が付いてるセルを優先）
         payout = None
-        for t in texts:
-            # 例: "1,180円" "7100円" "100円"
+
+        # (a) "xxxx円" を優先
+        for t in right_texts:
             m = re.search(r"(\d[\d,]{2,})\s*円", t)
             if m:
                 payout = int(m.group(1).replace(",", ""))
                 break
 
-        # "円"が取れない表示形式もあるので保険
+        # (b) 円が無い場合の保険（最後の方の大きい数字を拾う）
         if payout is None:
-            for t in texts:
+            for t in reversed(right_texts):
                 m = re.search(r"\b(\d[\d,]{2,})\b", t)
                 if m:
                     v = int(m.group(1).replace(",", ""))
@@ -535,50 +537,23 @@ def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
                         payout = v
                         break
 
-        if payout is None or payout < 100:
+        if payout is None:
+            continue
+
+        # 5) 異常値フィルタ（誤爆防止）
+        # 三連複100円は普通 100〜数十万程度。200万/500万はほぼ誤爆なので捨てる。
+        if payout > 500000:
             continue
 
         if combo in seen:
             continue
         seen.add(combo)
+
         out.append({"combo": combo, "payout": int(payout)})
 
-    if out:
-        return out
-
-    # 2) もし tr で取れなかった時だけ、テキストchunk方式の保険（超フォールバック）
-    text = soup.get_text("\n", strip=True)
-    if "三連複" not in text:
-        return []
-
-    # 「三連複」行っぽいところの近辺だけ見る
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    for i, ln in enumerate(lines):
-        if "三連複" not in ln:
-            continue
-
-        window = " ".join(lines[max(0, i-2): min(len(lines), i+4)])
-
-        nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", window)]
-        nums = [n for n in nums if 1 <= n <= 18]
-        if len(nums) < 3:
-            continue
-        a, b, c = sorted(nums[:3])
-        if len({a, b, c}) != 3:
-            continue
-
-        m = re.search(r"(\d[\d,]{2,})\s*円", window)
-        if not m:
-            continue
-        payout = int(m.group(1).replace(",", ""))
-        if payout < 100:
-            continue
-
-        combo = (a, b, c)
-        if combo not in seen:
-            seen.add(combo)
-            out.append({"combo": combo, "payout": payout})
-
+        if REFUND_DEBUG and out:
+            print("[REFUND_DEBUG] sanrenpuku_rows=", out[:3])
+  
     return out
 
 # ====== 三連複BOX(5頭=10点) 計算 ======
