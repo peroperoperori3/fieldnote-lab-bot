@@ -526,7 +526,6 @@ def _parse_money_yen(s: str):
     return int(m.group(1).replace(",", ""))
 
 def _norm_combo(s: str):
-    # "7-8-10" とか "7－8－10" とかを "7-8-10" に寄せる
     s = str(s).strip()
     s = s.replace("－", "-").replace("―", "-").replace("—", "-")
     s = re.sub(r"\s+", "", s)
@@ -541,14 +540,12 @@ def parse_refundmoney_sanrenpuku_by_race(html_text: str):
     txt = soup.get_text("\n", strip=True)
     lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
 
-    # レース区切り： "1R" "2R" ... を拾う（ページの形が多少変わっても強め）
     race_idx = []
     for i, ln in enumerate(lines):
         m = re.fullmatch(r"(\d{1,2})R", ln)
         if m:
             race_idx.append((int(m.group(1)), i))
     if not race_idx:
-        # 念のため "1R なんとか" 形式も拾う
         for i, ln in enumerate(lines):
             m = re.match(r"^(\d{1,2})R\b", ln)
             if m:
@@ -565,20 +562,17 @@ def parse_refundmoney_sanrenpuku_by_race(html_text: str):
         seg = chunk(start, end)
 
         hits = []
-        # 例: "三連複 7-8-10 1,180円 4人気"
         for j in range(len(seg)):
             if "三連複" not in seg[j]:
                 continue
             ln = seg[j]
-            # 1行にまとまっているケース
-            if re.search(r"三連複", ln):
-                combo_m = re.search(r"三連複\s*([0-9]+(?:[-－―—][0-9]+){2})", ln)
-                pay = _parse_money_yen(ln)
-                if combo_m and pay is not None:
-                    hits.append({"combo": _norm_combo(combo_m.group(1)), "payout": int(pay)})
-                    continue
 
-            # もし分割されてる時用（次行・次々行あたりに組合せ/金額が来る）
+            combo_m = re.search(r"三連複\s*([0-9]+(?:[-－―—][0-9]+){2})", ln)
+            pay = _parse_money_yen(ln)
+            if combo_m and pay is not None:
+                hits.append({"combo": _norm_combo(combo_m.group(1)), "payout": int(pay)})
+                continue
+
             look = " ".join(seg[j:j+4])
             combo_m = re.search(r"三連複\s*([0-9]+(?:[-－―—][0-9]+){2})", look)
             pay = _parse_money_yen(look)
@@ -602,7 +596,7 @@ def box_hit_payout(top_umaban_list, sanrenpuku_rows):
     sanrenpuku_rows: [{"combo":"7-8-10","payout":1180}, ...] ※同着で複数あり得る
     return: (hit:bool, payout_total:int, hit_combos:list[str])
     """
-    s = set(int(x) for x in top_umaban_list if str(x).isdigit() or isinstance(x, int))
+    s = set(int(x) for x in top_umaban_list if isinstance(x, (int, float, str)))
     payout_total = 0
     hit_combos = []
 
@@ -621,11 +615,20 @@ def box_hit_payout(top_umaban_list, sanrenpuku_rows):
 def load_pnl_total(path: str):
     p = Path(path)
     if not p.exists():
-        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "last_updated": None}
+        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "hits": 0, "last_updated": None}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(d, dict):
+            raise ValueError("pnl_total not dict")
+        d.setdefault("invest", 0)
+        d.setdefault("payout", 0)
+        d.setdefault("profit", int(d.get("payout", 0)) - int(d.get("invest", 0)))
+        d.setdefault("races", 0)
+        d.setdefault("hits", 0)
+        d.setdefault("last_updated", None)
+        return d
     except Exception:
-        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "last_updated": None}
+        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "hits": 0, "last_updated": None}
 
 def save_pnl_total(path: str, total: dict):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -637,7 +640,6 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
 
     def esc(s): return _html.escape(str(s))
 
-    # ---- 予想と同じ「相対色分け」ユーティリティ ----
     def _clamp01(x: float) -> float:
         return max(0.0, min(1.0, x))
 
@@ -696,37 +698,44 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
 
-    # ===== 収支サマリ（スタイルは崩さず、黄色は予想の注目と同系統） =====
+    # ===== 収支サマリ（見た目は崩さず：バッジ＋カード） =====
     if pnl_summary:
         invest = int(pnl_summary.get("invest", 0) or 0)
         payout = int(pnl_summary.get("payout", 0) or 0)
         profit = int(pnl_summary.get("profit", 0) or 0)
         races = int(pnl_summary.get("focus_races", 0) or 0)
+        hits = int(pnl_summary.get("focus_hits", 0) or 0)
         unit = int(pnl_summary.get("bet_unit", BET_UNIT) or BET_UNIT)
         nbox = int(pnl_summary.get("box_n", BET_BOX_N) or BET_BOX_N)
         pts = int(pnl_summary.get("bet_points_per_race", comb3_count(nbox)) or comb3_count(nbox))
+
         roi = 0.0
         if invest > 0:
             roi = round((payout / invest) * 100.0, 1)
+        hit_rate = 0.0
+        if races > 0:
+            hit_rate = round((hits / races) * 100.0, 1)
 
         profit_badge = badge(f"収支 {profit:+,}円", "#f59e0b" if profit >= 0 else "#ef4444", "#ffffff")
         roi_badge = badge(f"回収率 {roi:.1f}%", "#6b7280", "#ffffff")
+        hit_badge = badge(f"的中率 {hit_rate:.1f}%", "#6b7280", "#ffffff")
 
         parts.append(
             "<div style='margin:14px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
             "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;'>"
             f"<div style='font-size:16px;font-weight:900;color:#111827;'>今回の収支サマリー</div>"
-            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{profit_badge}{roi_badge}</div>"
+            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{profit_badge}{roi_badge}{hit_badge}</div>"
             "</div>"
             "<div style='margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;'>"
             f"{badge(f'注目レース {races}本', '#bfdbfe')}"
+            f"{badge(f'的中 {hits}本', '#bfdbfe')}"
             f"{badge(f'買い目 {nbox}頭BOX（{pts}点）', '#bfdbfe')}"
             f"{badge(f'1点 {unit}円', '#bfdbfe')}"
             f"{badge(f'投資 {invest:,}円', '#6b7280', '#ffffff')}"
             f"{badge(f'払戻 {payout:,}円', '#6b7280', '#ffffff')}"
             "</div>"
-            "<div style='margin-top:8px;color:#6b7280;font-size:12px;'>※集計は注目レースのみ上位5頭三連複BOX</div>"
+            "<div style='margin-top:8px;color:#6b7280;font-size:12px;'>※指数上位5頭3連複BOX注目レースのみ集計</div>"
             "</div>"
         )
 
@@ -738,10 +747,8 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
         top3 = r.get("result_top3", [])
         pred_by_umaban = {int(x["umaban"]): x for x in pred}
 
-        # ★このレースの上位5頭のスコア分布（相対色分けの基準）
         scores_in_race = [float(p.get("score", 0.0)) for p in pred if isinstance(p.get("score", None), (int, float))]
 
-        # ===== 混戦度バッジ（予想と同じ表現） =====
         k = r.get("konsen") or {}
         kval = k.get("value", None)
         is_focus = bool(k.get("is_focus", False))
@@ -767,7 +774,6 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             "</div>"
         )
 
-        # --- 結果セクション（赤系見出しだけ赤、指数の色は予想と同じ相対色） ---
         parts.append(section_title("結果（1〜3着）", badge("RESULT", "#fecaca"), "#fff1f2"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;margin-bottom:10px;'>")
@@ -810,7 +816,6 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
 
         parts.append("</tbody></table></div>")
 
-        # --- 予想セクション（青系） ---
         parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;'>")
@@ -849,7 +854,6 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
 
         parts.append("</tbody></table></div>")
 
-        # --- 注目BOXの当たり/外れ情報（控えめ表示：色は崩さずグレー/黄） ---
         bet = r.get("bet_box") or {}
         if bet.get("is_focus"):
             hit = bool(bet.get("hit"))
@@ -884,25 +888,21 @@ def main():
     active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
 
-    # keibablood は「-2」が多いので最優先
     SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
-    # ===== 累計P/L（トップページ用の素材） =====
     pnl_total = load_pnl_total(PNL_FILE)
 
     for track in active:
         baba = BABA_CODE.get(track)
-        track_id = BABA_CODE.get(track)  # 吉馬idも同値でOK運用（例: 船橋=19）
+        track_id = BABA_CODE.get(track)
         code = KEIBABLOOD_CODE.get(track)
         if not baba or not track_id or not code:
             print(f"[SKIP] {track}: code missing")
             continue
 
-        # ---- 騎手成績 ----
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
         jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
 
-        # ---- keibablood 取得 ----
         found = False
         picked_url = None
         used_series = None
@@ -928,7 +928,6 @@ def main():
             print(f"[SKIP] {track}: keibablood 未発見（-2優先で探索済み）")
             continue
 
-        # ---- 払戻（当日払戻金）を先にまとめて取得（同着対応のため） ----
         ref_url = refundmoney_url(baba, yyyymmdd)
         ref_html = fetch(ref_url, debug=False)
         sanrenpuku_map = parse_refundmoney_sanrenpuku_by_race(ref_html) if ref_html else {}
@@ -940,13 +939,12 @@ def main():
         races_out = []
         track_incomplete = False
 
-        # track内の注目BOX収支
         focus_races = 0
+        focus_hits = 0
         invest_sum = 0
         payout_sum = 0
 
         for rno in sorted(kb_races.keys()):
-            # ---- 吉馬取得（レース名用 + SP推定用）----
             fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
             fp_html = fetch(fp_url, debug=False)
             if not fp_html:
@@ -956,7 +954,6 @@ def main():
 
             sp_by_umaban, race_name = parse_kichiuma_sp(fp_html)
 
-            # ---- KB側の馬リスト作成（SP欠損は None）----
             rows = []
             for h in kb_races[rno]:
                 u = int(h["umaban"])
@@ -966,7 +963,7 @@ def main():
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
                 add = jockey_add_points(*rates) if rates else 0.0
 
-                sp = sp_by_umaban.get(u)  # Noneなら欠損
+                sp = sp_by_umaban.get(u)
 
                 rows.append({
                     "umaban": u,
@@ -977,16 +974,11 @@ def main():
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
-            # ---- SP推定器を作成して欠損を埋める（予想と同じ）----
             est_sp, est_info = estimate_sp_factory(rows, debug=False)
 
             for r in rows:
-                if r["sp_raw"] is None:
-                    r["sp_est"] = float(est_sp(r["base_index"]))
-                else:
-                    r["sp_est"] = float(r["sp_raw"])
+                r["sp_est"] = float(est_sp(r["base_index"])) if r["sp_raw"] is None else float(r["sp_raw"])
 
-            # ---- スコア計算（予想と同じ定義で top5 を作る）----
             horses_scored = []
             for r in rows:
                 sp = float(r["sp_est"])
@@ -1026,7 +1018,6 @@ def main():
                     "umaban": int(hh["umaban"]),
                     "name": hh["name"],
                     "score": float(hh["score"]),
-                    # デバッグ用
                     "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
                     "jockey": hh.get("jockey",""),
@@ -1034,7 +1025,6 @@ def main():
                     "source": hh.get("source", {}),
                 })
 
-            # ---- 結果（上位3）----
             mark_url = (
                 "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
                 f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
@@ -1042,7 +1032,6 @@ def main():
             rm_html = fetch(mark_url, debug=False)
             result_top3 = parse_top3_from_racemark(rm_html) if rm_html else []
 
-            # ---- 注目レースの三連複BOX収支（同着で複数三連複があれば全部加算）----
             bet_box = {"is_focus": False}
             is_focus = bool(konsen.get("is_focus", False))
             if is_focus:
@@ -1054,6 +1043,9 @@ def main():
                 top_umaban = [p["umaban"] for p in pred_top5[:nbox]]
                 san = sanrenpuku_map.get(int(rno), [])
                 hit, payout, combos = box_hit_payout(top_umaban, san)
+
+                if hit:
+                    focus_hits += 1
 
                 profit = int(payout) - int(invest)
 
@@ -1071,7 +1063,7 @@ def main():
                     "payout": int(payout),
                     "profit": int(profit),
                     "hit_combos": combos,
-                    "sanrenpuku_rows": san,  # 参考（同着で複数ある時の確認用）
+                    "sanrenpuku_rows": san,
                 }
 
             races_out.append({
@@ -1099,6 +1091,7 @@ def main():
         profit_sum = int(payout_sum) - int(invest_sum)
         pnl_summary = {
             "focus_races": int(focus_races),
+            "focus_hits": int(focus_hits),
             "box_n": int(BET_BOX_N),
             "bet_unit": int(BET_UNIT),
             "bet_points_per_race": int(comb3_count(BET_BOX_N)),
@@ -1107,11 +1100,11 @@ def main():
             "profit": int(profit_sum),
         }
 
-        # 累計も更新（トップページ用に使える）
         pnl_total["invest"] = int(pnl_total.get("invest", 0) or 0) + int(invest_sum)
         pnl_total["payout"] = int(pnl_total.get("payout", 0) or 0) + int(payout_sum)
         pnl_total["profit"] = int(pnl_total["payout"]) - int(pnl_total["invest"])
         pnl_total["races"] = int(pnl_total.get("races", 0) or 0) + int(focus_races)
+        pnl_total["hits"] = int(pnl_total.get("hits", 0) or 0) + int(focus_hits)
         pnl_total["last_updated"] = datetime.now().isoformat(timespec="seconds")
         save_pnl_total(PNL_FILE, pnl_total)
 
@@ -1145,7 +1138,7 @@ def main():
         json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
         html_path.write_text(render_result_html(title, races_out, pnl_summary), encoding="utf-8")
 
-        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (keibablood=-{used_series})  focus={focus_races} profit={profit_sum:+,}円")
+        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (keibablood=-{used_series})  focus={focus_races} hits={focus_hits} profit={profit_sum:+,}円")
 
 if __name__ == "__main__":
     main()
