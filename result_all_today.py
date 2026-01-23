@@ -484,175 +484,100 @@ def parse_top3_from_racemark(html_text: str):
 
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
-def parse_sanrenpuku_refunds(html_text: str):
+def parse_sanrenpuku_refunds(html_text: str, rno: int):
     """
-    強化版（三連複 払戻）
-    - 「三連複」行を拾う
-    - 組番は「組番っぽいセル」からだけ抽出（人気等の数字を混ぜない）
-    - 払戻は「円」or「,」を含むセルを優先して金額抽出
-    return: list[ {combo:(a,b,c), payout:int} ] (payout=100円あたり)
+    RefundMoneyList は「当日全レース」が1ページに入ってることがある。
+    なので "rnoR" の近辺だけを抜き出して、そこから三連複を拾う。
+    return: list[ {combo:(a,b,c), payout:int} ]  (payout=100円あたり)
     """
-    soup = BeautifulSoup(html_text, "lxml")
-    rows_out = []
+    if not html_text:
+        return []
 
-    def pick_payout_from_cells(cells_text):
-        # 「円」や「,」を含むセルを優先
-        cand = [s for s in cells_text if ("円" in s) or ("," in s)]
-        if not cand:
-            cand = list(cells_text)
+    # まずはテキストで「何R」周辺に切り出す（DOM構造が変わっても耐える）
+    # 例: "4R" の見出し付近を中心に前後を抜く
+    target = f"{int(rno)}R"
+    pos = html_text.find(target)
+    if pos < 0:
+        # "第4競走" 表記の可能性も見る
+        target2 = f"第{int(rno)}競走"
+        pos = html_text.find(target2)
+        if pos < 0:
+            return []
+        target = target2
 
-        for ss in cand:
-            m = re.search(r"(\d{1,3}(?:,\d{3})+)", ss)
-            if m:
-                return int(m.group(1).replace(",", ""))
-        for ss in cand:
-            m = re.search(r"(\d{4,})", ss)
-            if m:
-                return int(m.group(1))
-        return None
+    # 前後を適当に切り出し（長すぎると遅いので）
+    start = max(0, pos - 20000)
+    end   = min(len(html_text), pos + 40000)
+    chunk = html_text[start:end]
 
-    def pick_combo_from_cells(cells_text):
-        """
-        組番は「1-6-8」みたいなセルを最優先。
-        次に「1 6 8」みたいに3数字だけ入ってるセル。
-        """
-        # 1) ハイフン系区切り（- － ― ）を含むセル優先
-        best = None
-        for s in cells_text:
-            if ("円" in s) or ("人気" in s) or ("式別" in s) or ("三連複" in s):
-                continue
-            if re.search(r"\d+\s*[-－―]\s*\d+\s*[-－―]\s*\d+", s):
-                best = s
-                break
+    soup = BeautifulSoup(chunk, "lxml")
 
-        # 2) 見つからなければ「このセル内に数字がちょうど3つ」なやつ
-        if best is None:
-            for s in cells_text:
-                if ("円" in s) or ("人気" in s) or ("式別" in s) or ("三連複" in s):
-                    continue
-                nums = re.findall(r"\d+", s)
-                if len(nums) == 3:
-                    best = s
-                    break
-
-        if best is None:
-            return None
-
-        nums = re.findall(r"\d+", best)
-        if len(nums) < 3:
-            return None
-        a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
-        return (a, b, c)
-
-    for table in soup.find_all("table"):
-        for tr in table.find_all("tr"):
-            cells = tr.find_all(["th", "td"])
-            if not cells:
-                continue
-
-            cells_text = [c.get_text(" ", strip=True) for c in cells]
-            row_join = " ".join(cells_text)
-            row_n = re.sub(r"\s+", "", row_join)
-
-            if "三連複" not in row_n:
-                continue
-
-            combo = pick_combo_from_cells(cells_text)
-            payout = pick_payout_from_cells(cells_text)
-
-            if combo is None or payout is None:
-                continue
-
-            rows_out.append({"combo": combo, "payout": int(payout)})
-
-    # 同じcomboが複数あれば合算（同着など）
-    merged = {}
-    for it in rows_out:
-        cb = tuple(it["combo"])
-        merged[cb] = merged.get(cb, 0) + int(it["payout"])
-
-    return [{"combo": k, "payout": v} for k, v in merged.items()]
-
-def calc_trifecta_box_invest(unit: int) -> int:
-    # 5頭BOX -> C(5,3)=10点
-    return unit * 10
-
-def calc_payout_for_box(hit_combo_list, refunds, unit: int) -> int:
-    """
-    三連複BOX用・安全版
-    - 組番の順序違いを完全無視
-    - 同着で複数ある場合も全部合算
-    """
-    if not hit_combo_list or not refunds:
-        return 0
-
-    # BOXで当たった組（setで保持）
-    hit_sets = {frozenset(c) for c in hit_combo_list}
-
-    payout_total = 0
-    for rf in refunds:
-        combo = rf.get("combo")
-        if not combo or len(combo) != 3:
+    # chunk内の table を走査して「式別/組番/払戻」を含む行を探す
+    out = []
+    for t in soup.find_all("table"):
+        trs = t.find_all("tr")
+        if len(trs) < 2:
             continue
 
-        if frozenset(combo) in hit_sets:
-            payout100 = int(rf.get("payout", 0))
-            payout_total += int(payout100 * (unit / 100))
-
-    return payout_total
-
-def try_parse_refund_url_from_racemark_html(rm_html: str, baba: int, yyyymmdd: str, rno: int):
-    """
-    RaceMarkTable内の「払戻」リンクは、たまに raceNo が入ってない/別レースになることがある。
-    なので最終的に必ず
-      RefundMoneyList?k_babaCode=..&k_raceDate=..&k_raceNo=..
-    に矯正して返す。
-    """
-    # まずは確実に正しいfallback（これが正解URL）
-    fallback = build_refund_url_fallback(baba, yyyymmdd, rno)
-
-    if not rm_html:
-        return fallback
-
-    soup = BeautifulSoup(rm_html, "lxml")
-
-    # rm_html 内に RefundMoneyList のURLがあれば拾う
-    found = None
-    for a in soup.find_all("a"):
-        href = (a.get("href") or "").strip()
-        txt = a.get_text(" ", strip=True)
-        if ("払戻" in txt) or ("払戻金" in txt) or ("払戻一覧" in txt):
-            if href.startswith("http"):
-                found = href
+        # ヘッダっぽい行を探す（複数あることがある）
+        header_idx = None
+        headers = None
+        for i, tr in enumerate(trs[:3]):  # 先頭3行ぐらい見れば十分
+            hs = [c.get_text(" ", strip=True) for c in tr.find_all(["th","td"])]
+            hjoin = " ".join(hs)
+            if ("式別" in hjoin) and (("払戻" in hjoin) or ("払戻金" in hjoin)):
+                header_idx = i
+                headers = hs
                 break
-            if href.startswith("/"):
-                found = "https://www.keiba.go.jp" + href
-                break
+        if header_idx is None or not headers:
+            continue
 
-    if not found:
-        m = re.search(r"(https?://www\.keiba\.go\.jp[^\"'\s]+RefundMoneyList[^\"'\s]+)", rm_html)
-        if m:
-            found = m.group(1)
+        def find_col(keys, hdrs):
+            for j, h in enumerate(hdrs):
+                for k in keys:
+                    if k in h:
+                        return j
+            return None
 
-    # 見つからなければfallback
-    if not found:
-        return fallback
+        c_type = find_col(["式別", "式"], headers)
+        c_kumi = find_col(["組番", "組", "馬番"], headers)
+        c_pay  = find_col(["払戻", "払戻金", "払戻額", "金額"], headers)
+        if c_type is None or c_kumi is None or c_pay is None:
+            continue
 
-    # ✅ 最重要：raceNo が入ってなかったり違ってたら、必ず正しいURLに戻す
-    mno = re.search(r"[?&]k_raceNo=(\d+)", found)
-    if (not mno) or (int(mno.group(1)) != int(rno)):
-        return fallback
+        for tr in trs[header_idx+1:]:
+            cells = tr.find_all(["th","td"])
+            if not cells:
+                continue
+            vals = [c.get_text(" ", strip=True) for c in cells]
+            if len(vals) <= max(c_type, c_kumi, c_pay):
+                continue
 
-    mb = re.search(r"[?&]k_babaCode=(\d+)", found)
-    if (not mb) or (int(mb.group(1)) != int(baba)):
-        return fallback
+            bet_type = re.sub(r"\s+", "", vals[c_type])
+            if "三連複" not in bet_type:
+                continue
 
-    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
-    if f"k_raceDate={date_slash}" not in found:
-        return fallback
+            kumi_raw = vals[c_kumi]
+            pay_raw  = vals[c_pay]
 
-    return found
+            nums = re.findall(r"\d+", kumi_raw)
+            if len(nums) < 3:
+                continue
+            a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
 
+            m = re.search(r"([\d,]+)", pay_raw)
+            if not m:
+                continue
+            payout = int(m.group(1).replace(",", ""))
+
+            out.append({"combo": (a, b, c), "payout": payout})
+
+        if out:
+            # このtableで取れたらもう十分（同じchunk内に複数ある場合もあるが、基本OK）
+            break
+
+    return out
+  
 def build_refund_url_fallback(baba: int, yyyymmdd: str, rno: int):
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
     return (
@@ -1032,7 +957,7 @@ def main():
             # keiba.go.jp 払戻（三連複）
             refund_url = try_parse_refund_url_from_racemark_html(rm_html, baba, yyyymmdd, rno)
             refund_html = fetch(refund_url, debug=debug) if refund_url else ""
-            refunds = parse_sanrenpuku_refunds(refund_html) if refund_html else []
+            refunds = parse_sanrenpuku_refunds(refund_html, rno) if refund_html else []
             if REFUND_DEBUG:
                 print(f"[REFUND_DEBUG] {track} {rno}R refund_html_has_sanrenpuku={'三連複' in (refund_html or '')}")
                 print(f"[REFUND_DEBUG] {track} {rno}R refunds_found={len(refunds)} refunds={refunds[:5]}")
