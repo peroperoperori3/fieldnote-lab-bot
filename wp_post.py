@@ -130,7 +130,8 @@ def main():
 
         # 1日1場1記事で固定（slug重複しないように track_slug を必ず入れる）
         track_slug = safe_track_slug(place, place_code)
-        slug = f"{slug_prefix}-{re.sub(r'\\D','',str(date or ''))}-{track_slug}"
+        date_num = re.sub(r"\D", "", str(date or ""))  # ★ f-stringの外で作る（SyntaxError回避）
+        slug = f"{slug_prefix}-{date_num}-{track_slug}"
 
         # タイトルを統一：2026.01.23 笠松競馬 結果（余計な文字なし）
         title = f"{ymd_dot(date)} {place}競馬 {mode_label}"
