@@ -601,22 +601,57 @@ def calc_payout_for_box(hit_combo_list, refunds, unit: int) -> int:
 
     return payout_total
 
-def try_parse_refund_url_from_racemark_html(rm_html: str):
+def try_parse_refund_url_from_racemark_html(rm_html: str, baba: int, yyyymmdd: str, rno: int):
+    """
+    RaceMarkTable内の「払戻」リンクは、たまに raceNo が入ってない/別レースになることがある。
+    なので最終的に必ず
+      RefundMoneyList?k_babaCode=..&k_raceDate=..&k_raceNo=..
+    に矯正して返す。
+    """
+    # まずは確実に正しいfallback（これが正解URL）
+    fallback = build_refund_url_fallback(baba, yyyymmdd, rno)
+
     if not rm_html:
-        return None
+        return fallback
+
     soup = BeautifulSoup(rm_html, "lxml")
+
+    # rm_html 内に RefundMoneyList のURLがあれば拾う
+    found = None
     for a in soup.find_all("a"):
-        href = a.get("href") or ""
+        href = (a.get("href") or "").strip()
         txt = a.get_text(" ", strip=True)
         if ("払戻" in txt) or ("払戻金" in txt) or ("払戻一覧" in txt):
             if href.startswith("http"):
-                return href
+                found = href
+                break
             if href.startswith("/"):
-                return "https://www.keiba.go.jp" + href
-    m = re.search(r"(https?://www\.keiba\.go\.jp[^\"'\s]+RefundMoneyList[^\"'\s]+)", rm_html)
-    if m:
-        return m.group(1)
-    return None
+                found = "https://www.keiba.go.jp" + href
+                break
+
+    if not found:
+        m = re.search(r"(https?://www\.keiba\.go\.jp[^\"'\s]+RefundMoneyList[^\"'\s]+)", rm_html)
+        if m:
+            found = m.group(1)
+
+    # 見つからなければfallback
+    if not found:
+        return fallback
+
+    # ✅ 最重要：raceNo が入ってなかったり違ってたら、必ず正しいURLに戻す
+    mno = re.search(r"[?&]k_raceNo=(\d+)", found)
+    if (not mno) or (int(mno.group(1)) != int(rno)):
+        return fallback
+
+    mb = re.search(r"[?&]k_babaCode=(\d+)", found)
+    if (not mb) or (int(mb.group(1)) != int(baba)):
+        return fallback
+
+    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
+    if f"k_raceDate={date_slash}" not in found:
+        return fallback
+
+    return found
 
 def build_refund_url_fallback(baba: int, yyyymmdd: str, rno: int):
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
