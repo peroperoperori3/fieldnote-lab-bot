@@ -14,42 +14,80 @@ SP_W = float(os.environ.get("SP_W", "1.0"))
 KB_W = float(os.environ.get("KB_W", "0.10"))
 JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
 
-# ===== 混戦度（上位5頭の指数偏差ベース）=====
+# ===== 混戦度（案3: gap12 + gap15 合成）=====
 KONSEN_NAME = os.environ.get("KONSEN_NAME", "混戦度")
-# 上位5頭の score の標準偏差がこの値以上なら「バラけ」扱いで混戦度が0寄りになる
-KONSEN_SD_REF = float(os.environ.get("KONSEN_SD_REF", "1.20"))  # 0.8〜1.8あたりで調整
+
+# gap=この値のとき混戦度が約50点になる（小さいほど“厳しい”＝混戦にしにくい）
+# 1-2差は小さく出やすいので MID も小さめ、1-5差は少し大きめが目安
+KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.012"))  # 1.2%で50点
+KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "0.030"))  # 3.0%で50点
+
 # 注目判定（厳しめ）
-KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "90"))  # 例: 90以上を注目
+KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "85"))  # 85以上なら注目
 
 def _mean(xs):
     return sum(xs) / len(xs) if xs else 0.0
 
-def _stddev_pop(xs):
-    if not xs:
-        return 0.0
-    m = _mean(xs)
-    return math.sqrt(sum((x - m) ** 2 for x in xs) / len(xs))
-
 def _clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
-def calc_konsen_from_top5(scores_top5):
+def _score_from_gap(gap_ratio: float, mid: float) -> float:
     """
-    scores_top5: list[float]（上位5頭のscore）
-    sd(標準偏差)が小さいほど拮抗 → 混戦度は高くする（0..100）
+    gap_ratio が小さいほど高得点（0..100）
+    exp(-ln2 * gap/mid) にして、gap=midで50点、gapが大きいと指数的に下がる
     """
-    sd = _stddev_pop(scores_top5)
-    konsen = 100.0 * (1.0 - _clamp(sd / KONSEN_SD_REF, 0.0, 1.0))
-    konsen = round(konsen, 1)
+    mid = max(1e-9, float(mid))
+    gap_ratio = max(0.0, float(gap_ratio))
+    return 100.0 * math.exp(-math.log(2.0) * (gap_ratio / mid))
+
+def calc_konsen_top5_combo(top5_scores_desc):
+    """
+    top5_scores_desc: score降順の5個（[s1,s2,s3,s4,s5]）
+    案3: gap12 と gap15 を両方使って最終混戦度を出す（厳しめに min）
+    """
+    s = [float(x) for x in top5_scores_desc]
+    if len(s) < 5:
+        return {
+            "name": KONSEN_NAME,
+            "value": 0.0,
+            "is_focus": False,
+            "reason": "top5不足",
+        }
+
+    mu = _mean(s)
+    if mu <= 0:
+        # scoreがゼロ近辺で異常なとき。ここは安全側で0扱いにする
+        return {
+            "name": KONSEN_NAME,
+            "value": 0.0,
+            "is_focus": False,
+            "mean_top5": round(mu, 3),
+            "reason": "mean<=0",
+        }
+
+    gap12 = (s[0] - s[1]) / mu
+    gap15 = (s[0] - s[4]) / mu
+
+    score12 = _score_from_gap(gap12, KONSEN_GAP12_MID)
+    score15 = _score_from_gap(gap15, KONSEN_GAP15_MID)
+
+    # ★厳しめ合成：どっちかが悪ければ混戦じゃない → min
+    konsen = min(score12, score15)
+    konsen = round(_clamp(konsen, 0.0, 100.0), 1)
 
     return {
         "name": KONSEN_NAME,
         "value": konsen,
         "is_focus": bool(konsen >= KONSEN_FOCUS_TH),
-        "sd": round(sd, 4),
-        "sd_ref": KONSEN_SD_REF,
+        "mean_top5": round(mu, 3),
+        "gap12_ratio": round(gap12, 5),
+        "gap15_ratio": round(gap15, 5),
+        "gap12_mid": KONSEN_GAP12_MID,
+        "gap15_mid": KONSEN_GAP15_MID,
         "focus_th": KONSEN_FOCUS_TH,
-        "basis": "top5_score_stddev",
+        "mix": "min(score12, score15)",
+        "score12": round(score12, 1),
+        "score15": round(score15, 1),
     }
 
 # keiba.go.jp babaCode（開催判定用）※帯広除外
@@ -411,13 +449,11 @@ def parse_kichiuma_sp(html: str):
 
     return sp_by, meta.get("race_name", "")
 
-# ====== HTML（元の色・スタイルを維持して、混戦度は1行だけ追加） ======
+# ====== HTML（見出しを「1R レース名」に + 相対色分け） ======
 def render_html(title: str, preds) -> str:
     import html as _html
-
     def esc(s): return _html.escape(str(s))
 
-    # ---- 相対色分け：上位5頭内の min-max を 0..1 にして濃淡 ----
     def _clamp01(x: float) -> float:
         return max(0.0, min(1.0, x))
 
@@ -448,7 +484,6 @@ def render_html(title: str, preds) -> str:
             t = 0.55
         else:
             t = (float(sc) - mn) / (mx - mn)
-
         t2 = _clamp01(t ** 0.75)
 
         bg = _mix(LO, HI, t2)
@@ -488,25 +523,28 @@ def render_html(title: str, preds) -> str:
 
         scores_in_race = [float(p.get("score", 0.0)) for p in picks if isinstance(p.get("score", None), (int, float))]
 
+        # 混戦度表示（スタイルは崩さず、見出し文字列に足すだけ）
+        k = race.get("konsen") or {}
+        kval = k.get("value", None)
+        is_focus = bool(k.get("is_focus", False))
+
+        extra = ""
+        if isinstance(kval, (int, float)):
+            extra = f"　{(k.get('name') or '混戦度')} {float(kval):.1f}"
+            if is_focus:
+                extra += "　★注目"
+
         parts.append(
             "<div style='margin:16px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
         )
 
-        head = f"{rno}R" + (f" {race_name}" if race_name else "")
+        head = f"{rno}R" + (f" {race_name}" if race_name else "") + extra
         parts.append(
             "<div style='display:flex;align-items:baseline;gap:10px;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
             "</div>"
         )
-
-        # ★混戦度：見出し直下に小さく1行追加（スタイル崩さない）
-        k = race.get("konsen") or {}
-        if isinstance(k.get("value", None), (int, float)):
-            line = f"{k.get('name','混戦度')} {float(k['value']):.1f}"
-            if bool(k.get("is_focus", False)):
-                line += "　★注目"
-            parts.append(f"<div style='margin-top:4px;font-size:12px;color:#6b7280;font-weight:700;'>{esc(line)}</div>")
 
         parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
         parts.append("<div style='overflow-x:auto;'>")
@@ -581,20 +619,23 @@ def estimate_sp_factory(rows, debug=False):
         a_b = fit_linear(xs, ys)
 
     def est(base_index: float) -> float:
+        # ① 十分データあり → 回帰で推定（レースの空気に合わせる）
         if a_b is not None:
             a, b = a_b
             v = a * base_index + b
             return clamp(v, sp_min_obs - 2.0, sp_max_obs + 2.0)
 
+        # ② 少数データ → 中央のズレで補正
         if len(pairs) >= 1:
             sp_med = sorted([y for _, y in pairs])[len(pairs) // 2]
             kb_med = sorted([x for x, _ in pairs])[len(pairs) // 2]
             v = base_index + (sp_med - kb_med)
             return clamp(v, 45.0, 78.0)
 
+        # ③ SPが全員欠損 → KB順位でSPっぽいレンジ(55〜70)に正規化
         if kb_max == kb_min:
             return 62.0
-        t = (base_index - kb_min) / (kb_max - kb_min)
+        t = (base_index - kb_min) / (kb_max - kb_min)  # 0..1
         v = 55.0 + t * 15.0
         return clamp(v, 45.0, 78.0)
 
@@ -618,22 +659,32 @@ def main():
 
     print(f"[INFO] DATE={yyyymmdd}")
     print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
+    print(f"[INFO] KONSEN name={KONSEN_NAME} GAP12_MID={KONSEN_GAP12_MID} GAP15_MID={KONSEN_GAP15_MID} FOCUS_TH={KONSEN_FOCUS_TH}")
 
     active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
 
+    # keibablood は「-2」が多いので最優先
     SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     for track in active:
-        track_id = BABA_CODE.get(track)
+        track_id = BABA_CODE.get(track)  # 吉馬のidもこの数字でOK（例: 船橋=19 / 笠松=23）
         code = KEIBABLOOD_CODE.get(track)
         if not track_id or not code:
             print(f"[SKIP] {track}: code missing")
             continue
 
+        # ---- 騎手成績 ----
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
         jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
+        if debug:
+            print("========== JOCKEY DEBUG ==========")
+            print(f"[DEBUG] track={track}")
+            print(f"[DEBUG] kaisekisya_url={jockey_url}")
+            print(f"[DEBUG] jockey_stats_count={len(jockey_stats)}")
+            print("==================================")
 
+        # ---- keibablood 取得 ----
         found = False
         used_series = None
         picked_url = None
@@ -663,6 +714,7 @@ def main():
         track_incomplete = False
 
         for rno in sorted(kb_races.keys()):
+            # ---- 吉馬取得（ここが取れなかったら開催場スキップ）----
             fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
             fp_html = fetch(fp_url, debug=False)
             if not fp_html:
@@ -672,6 +724,7 @@ def main():
 
             sp_by_umaban, race_name = parse_kichiuma_sp(fp_html)
 
+            # ---- KB側の馬リスト作成（SP欠損は None）----
             rows = []
             for h in kb_races[rno]:
                 u = int(h["umaban"])
@@ -681,7 +734,7 @@ def main():
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
                 add = jockey_add_points(*rates) if rates else 0.0
 
-                sp = sp_by_umaban.get(u)
+                sp = sp_by_umaban.get(u)  # Noneなら欠損
 
                 rows.append({
                     "umaban": u,
@@ -692,14 +745,20 @@ def main():
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
+            # ---- SP推定器を作成して欠損を埋める ----
             est_sp, est_info = estimate_sp_factory(rows, debug=False)
 
+            missing = [r["umaban"] for r in rows if r["sp_raw"] is None]
             for r in rows:
                 if r["sp_raw"] is None:
                     r["sp_est"] = float(est_sp(r["base_index"]))
                 else:
                     r["sp_est"] = float(r["sp_raw"])
 
+            if missing:
+                print(f"[INFO] {track} {rno}R: SP missing -> estimated for umaban={missing} (pairs={est_info['pairs_n']}, linear={est_info['has_linear']})")
+
+            # ---- スコア計算（SPメイン）----
             horses_scored = []
             for r in rows:
                 sp = float(r["sp_est"])
@@ -724,12 +783,13 @@ def main():
                 track_incomplete = True
                 break
 
+            # スコア順（top5確定）
             horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
             top5 = horses_scored[:5]
 
-            # ---- 混戦度（上位5頭の指数偏差）----
-            scores_top5 = [float(h["score"]) for h in top5]
-            konsen = calc_konsen_from_top5(scores_top5)
+            # ---- 混戦度（案3: gap12 + gap15 合成 / 上位5のみ） ----
+            top5_scores = [float(h["score"]) for h in top5]  # 既に降順
+            konsen = calc_konsen_top5_combo(top5_scores)
 
             picks = []
             for j, hh in enumerate(top5):
@@ -738,6 +798,7 @@ def main():
                     "umaban": int(hh["umaban"]),
                     "name": hh["name"],
                     "score": float(hh["score"]),
+                    # デバッグ用（wp側表示はしない）
                     "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
                     "jockey": hh.get("jockey", ""),
@@ -770,9 +831,10 @@ def main():
             "weights": {"SP_W": SP_W, "KB_W": KB_W, "JOCKEY_W": JOCKEY_W},
             "konsen_config": {
                 "name": KONSEN_NAME,
-                "sd_ref": KONSEN_SD_REF,
+                "gap12_mid": KONSEN_GAP12_MID,
+                "gap15_mid": KONSEN_GAP15_MID,
                 "focus_th": KONSEN_FOCUS_TH,
-                "basis": "top5_score_stddev",
+                "mix": "min(score12, score15)",
             },
             "source": {
                 "keibablood_url": picked_url,
