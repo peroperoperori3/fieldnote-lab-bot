@@ -486,29 +486,21 @@ def parse_top3_from_racemark(html_text: str):
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
 def parse_sanrenpuku_refunds(html_text: str):
     """
-    強化版（三連複 払戻）※金額取り違え防止
+    強化版（三連複 払戻）
     - 「三連複」行を拾う
-    - 組番は行全体から数字3つ
-    - 払戻は「円」または「,」を含むセルを優先して金額抽出（人気=1等を拾わない）
+    - 組番は「組番っぽいセル」からだけ抽出（人気等の数字を混ぜない）
+    - 払戻は「円」or「,」を含むセルを優先して金額抽出
     return: list[ {combo:(a,b,c), payout:int} ] (payout=100円あたり)
     """
     soup = BeautifulSoup(html_text, "lxml")
-    out = []
+    rows_out = []
 
-    def pick_payout_from_cells(cells):
-        # まず「円」や「,」を含むセルを金額候補として優先
-        cand = []
-        for s in cells:
-            ss = str(s)
-            if ("円" in ss) or ("," in ss):
-                cand.append(ss)
-
-        # 候補が無ければセル全部を候補に（最後の保険）
+    def pick_payout_from_cells(cells_text):
+        # 「円」や「,」を含むセルを優先
+        cand = [s for s in cells_text if ("円" in s) or ("," in s)]
         if not cand:
-            cand = [str(s) for s in cells]
+            cand = list(cells_text)
 
-        # 候補の中から「4桁以上 or カンマ付き」を優先して拾う
-        # 例: 5,930 / 5930 / 12,340
         for ss in cand:
             m = re.search(r"(\d{1,3}(?:,\d{3})+)", ss)
             if m:
@@ -517,37 +509,65 @@ def parse_sanrenpuku_refunds(html_text: str):
             m = re.search(r"(\d{4,})", ss)
             if m:
                 return int(m.group(1))
-        # 最後に「数字(1〜3桁)」しか無い場合は誤爆しやすいので拾わない
         return None
 
-    for t in soup.find_all("table"):
-        for tr in t.find_all("tr"):
-            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
+    def pick_combo_from_cells(cells_text):
+        """
+        組番は「1-6-8」みたいなセルを最優先。
+        次に「1 6 8」みたいに3数字だけ入ってるセル。
+        """
+        # 1) ハイフン系区切り（- － ― ）を含むセル優先
+        best = None
+        for s in cells_text:
+            if ("円" in s) or ("人気" in s) or ("式別" in s) or ("三連複" in s):
+                continue
+            if re.search(r"\d+\s*[-－―]\s*\d+\s*[-－―]\s*\d+", s):
+                best = s
+                break
+
+        # 2) 見つからなければ「このセル内に数字がちょうど3つ」なやつ
+        if best is None:
+            for s in cells_text:
+                if ("円" in s) or ("人気" in s) or ("式別" in s) or ("三連複" in s):
+                    continue
+                nums = re.findall(r"\d+", s)
+                if len(nums) == 3:
+                    best = s
+                    break
+
+        if best is None:
+            return None
+
+        nums = re.findall(r"\d+", best)
+        if len(nums) < 3:
+            return None
+        a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
+        return (a, b, c)
+
+    for table in soup.find_all("table"):
+        for tr in table.find_all("tr"):
+            cells = tr.find_all(["th", "td"])
             if not cells:
                 continue
 
-            row_txt = " ".join(cells)
-            row_txt_n = re.sub(r"\s+", "", row_txt)
+            cells_text = [c.get_text(" ", strip=True) for c in cells]
+            row_join = " ".join(cells_text)
+            row_n = re.sub(r"\s+", "", row_join)
 
-            if "三連複" not in row_txt_n:
+            if "三連複" not in row_n:
                 continue
 
-            # 組番（数字3つ）
-            nums = re.findall(r"\d+", row_txt)
-            if len(nums) < 3:
-                continue
-            a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
-            combo = (a, b, c)
+            combo = pick_combo_from_cells(cells_text)
+            payout = pick_payout_from_cells(cells_text)
 
-            payout = pick_payout_from_cells(cells)
-            if payout is None:
+            if combo is None or payout is None:
                 continue
 
-            out.append({"combo": combo, "payout": payout})
+            rows_out.append({"combo": combo, "payout": int(payout)})
 
     # 同じcomboが複数あれば合算（同着など）
     merged = {}
-    for it in out:
+    for it in rows_out:
         cb = tuple(it["combo"])
         merged[cb] = merged.get(cb, 0) + int(it["payout"])
 
