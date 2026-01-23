@@ -1,6 +1,7 @@
-import os, re, json, time, math
+import os, re, json, time, glob
 from datetime import datetime
 from pathlib import Path
+from itertools import combinations
 
 import requests
 from bs4 import BeautifulSoup
@@ -8,57 +9,32 @@ from bs4 import BeautifulSoup
 UA = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ja,en;q=0.8"}
 MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 
-# ===== スコア重み（予想と合わせて残す：結果は pred_top5 の score を表示に使うだけ）=====
+# ===== スコア重み（予想と同じ）=====
 SP_W = float(os.environ.get("SP_W", "1.0"))
 KB_W = float(os.environ.get("KB_W", "0.10"))
 JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
 
-# ===== 混戦度（予想と同じ：ギャップ方式 / 環境変数で調整可）=====
+# ===== 混戦度（予想と同じ：ギャップ方式）=====
 KONSEN_NAME = os.environ.get("KONSEN_NAME", "混戦度")
 KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
-KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "50"))
+KONSEN_FOCUS_TH  = float(os.environ.get("KONSEN_FOCUS_TH", "50"))
 KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
 
-# ===== 注目レース 三連複BOX収支 =====
+# ===== 注目レース：三連複BOX（上位5頭）=====
+BET_ENABLED = os.environ.get("BET_ENABLED", "1").strip() != "0"
 BET_UNIT = int(os.environ.get("BET_UNIT", "100"))  # 1点あたり（円）
-BET_BOX_N = int(os.environ.get("BET_BOX_N", "5"))  # 上位何頭BOX（デフォルト5→10点）
-PNL_FILE = os.environ.get("PNL_FILE", "output/pnl_total.json")
 
 # keiba.go.jp babaCode（開催判定用）※帯広除外
 BABA_CODE = {
-  "門別": 36,
-  "盛岡": 10,
-  "水沢": 11,
-  "浦和": 18,
-  "船橋": 19,
-  "大井": 20,
-  "川崎": 21,
-  "金沢": 22,
-  "笠松": 23,
-  "名古屋": 24,
-  "園田": 27,
-  "姫路": 28,
-  "高知": 31,
-  "佐賀": 32,
+  "門別": 36, "盛岡": 10, "水沢": 11, "浦和": 18, "船橋": 19, "大井": 20, "川崎": 21,
+  "金沢": 22, "笠松": 23, "名古屋": 24, "園田": 27, "姫路": 28, "高知": 31, "佐賀": 32,
 }
 
 # keibablood 開催場コード（実績ベース）
 KEIBABLOOD_CODE = {
-  "門別": "30",
-  "盛岡": "35",
-  "水沢": "36",
-  "浦和": "42",
-  "船橋": "43",
-  "大井": "44",
-  "川崎": "45",
-  "金沢": "46",
-  "笠松": "47",
-  "名古屋": "48",
-  "園田": "50",
-  "姫路": "51",
-  "高知": "54",
-  "佐賀": "55",
+  "門別": "30","盛岡": "35","水沢": "36","浦和": "42","船橋": "43","大井": "44","川崎": "45",
+  "金沢": "46","笠松": "47","名古屋": "48","園田": "50","姫路": "51","高知": "54","佐賀": "55",
 }
 
 # kaisekisya（開催場別）
@@ -102,15 +78,13 @@ def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
         html = fetch(url, debug=debug)
         if html and ("1R" in html):
             active.append(track)
-            if debug:
-                print(f"[ACTIVE] {track} (babaCode={baba})")
+            if debug: print(f"[ACTIVE] {track} (babaCode={baba})")
         else:
-            if debug:
-                print(f"[NO] {track} (babaCode={baba})")
+            if debug: print(f"[NO] {track} (babaCode={baba})")
         time.sleep(0.08)
     return active
 
-# ===== 混戦度（予想と同じ） =====
+# ===== 混戦度（ギャップ方式）=====
 def _clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
@@ -165,12 +139,10 @@ def parse_kaisekisya_jockey_table(html: str):
         if ("勝率" in txt) and ("連対率" in txt) and ("三連対率" in txt):
             target = t
             break
-    if not target:
-        return {}
+    if not target: return {}
 
     rows = target.find_all("tr")
-    if len(rows) < 2:
-        return {}
+    if len(rows) < 2: return {}
 
     header_cells = rows[0].find_all(["th","td"])
     headers = [c.get_text(" ", strip=True) for c in header_cells]
@@ -186,8 +158,7 @@ def parse_kaisekisya_jockey_table(html: str):
     c_win  = find_col(["勝率"])
     c_quin = find_col(["連対率"])
     c_tri  = find_col(["三連対率"])
-    if None in (c_win, c_quin, c_tri):
-        return {}
+    if None in (c_win, c_quin, c_tri): return {}
 
     def pct(x):
         m = re.search(r"([\d.]+)\s*%", str(x))
@@ -196,13 +167,10 @@ def parse_kaisekisya_jockey_table(html: str):
     stats = {}
     for tr in rows[1:]:
         tds = tr.find_all(["td","th"])
-        if not tds:
-            continue
+        if not tds: continue
         vals = [td.get_text(" ", strip=True) for td in tds]
         mx = max(c_name, c_win, c_quin, c_tri)
-        if len(vals) <= mx:
-            continue
-
+        if len(vals) <= mx: continue
         name = re.sub(r"\s+", "", vals[c_name])
         win  = pct(vals[c_win])
         quin = pct(vals[c_quin])
@@ -322,7 +290,6 @@ def parse_kichiuma_race_meta(html: str):
             break
     if idx5 is not None and idx5 + 1 < len(lines):
         race_name = lines[idx5 + 1]
-
     if idx5 is not None and idx5 + 2 < len(lines):
         race_info = lines[idx5 + 2]
 
@@ -386,7 +353,6 @@ def parse_kichiuma_sp(html: str):
 
     c_umaban = find_col_exact("馬") or 0
     c_sp = find_col_exact("SP能力値")
-
     if c_sp is None:
         for i in range(len(headers) - 1):
             if headers[i] == "SP" and headers[i+1] == "能力値":
@@ -414,16 +380,14 @@ def parse_kichiuma_sp(html: str):
         cell = str(vals[c_sp]).strip()
         if cell == "" or cell in {"-", "—", "―"}:
             continue
-
         msp = re.search(r"(\d+(?:\.\d+)?)", cell)
         if not msp:
             continue
-
         sp_by[umaban] = float(msp.group(1))
 
     return sp_by, meta.get("race_name", "")
 
-# ===== 推定まわり（SP欠損をKBで埋める） =====
+# ===== 推定（SP欠損をKBで「周りに合わせて」埋める）=====
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
@@ -472,20 +436,12 @@ def estimate_sp_factory(rows, debug=False):
         v = 55.0 + t * 15.0
         return clamp(v, 45.0, 78.0)
 
-    info = {
-        "pairs_n": len(pairs),
-        "sp_min_obs": sp_min_obs,
-        "sp_max_obs": sp_max_obs,
-        "has_linear": (a_b is not None),
-        "linear": a_b,
-        "kb_min": kb_min,
-        "kb_max": kb_max,
-    }
+    info = {"pairs_n": len(pairs), "has_linear": (a_b is not None), "linear": a_b}
     if debug:
         print(f"[DEBUG] SP-estimator info: {info}")
     return est, info
 
-# ====== keiba.go.jp 結果（RaceMarkTable：上位3のみ） ======
+# ====== keiba.go.jp 結果（RaceMarkTable） ======
 def parse_top3_from_racemark(html_text: str):
     soup = BeautifulSoup(html_text, "lxml")
     top = []
@@ -513,131 +469,82 @@ def parse_top3_from_racemark(html_text: str):
             break
     return top
 
-# ====== 払戻（RefundMoneyList）から「三連複」の組合せと払戻を拾う（同着で複数行もOK） ======
-def refundmoney_url(baba: int, yyyymmdd: str) -> str:
-    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
-    return f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode={baba}&k_raceDate={date_slash}"
-
-def _parse_money_yen(s: str):
-    s = str(s)
-    m = re.search(r"([\d,]+)\s*円", s)
-    if not m:
-        return None
-    return int(m.group(1).replace(",", ""))
-
-def _norm_combo(s: str):
-    s = str(s).strip()
-    s = s.replace("－", "-").replace("―", "-").replace("—", "-")
-    s = re.sub(r"\s+", "", s)
-    return s
-
-def parse_refundmoney_sanrenpuku_by_race(html_text: str):
+# ====== 払戻：三連複（RefundMoneyList） 同着で複数行にも対応 ======
+def parse_sanrenpuku_refunds(html_text: str):
     """
-    return: dict[int, list[{"combo":"7-8-10","payout":1180}]]
-      race_no -> 三連複の行を全部（同着などで複数ある場合は複数）
+    return: list[ {combo:(a,b,c), payout:int} ]  (payoutは100円あたり)
+    同着などで三連複が複数組ある場合：その分返す
     """
     soup = BeautifulSoup(html_text, "lxml")
-    txt = soup.get_text("\n", strip=True)
-    lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+    txt = soup.get_text(" ", strip=True)
+    if "三連複" not in txt:
+        return []
 
-    race_idx = []
-    for i, ln in enumerate(lines):
-        m = re.fullmatch(r"(\d{1,2})R", ln)
-        if m:
-            race_idx.append((int(m.group(1)), i))
-    if not race_idx:
-        for i, ln in enumerate(lines):
-            m = re.match(r"^(\d{1,2})R\b", ln)
-            if m:
-                race_idx.append((int(m.group(1)), i))
-
-    race_idx.sort(key=lambda x: x[1])
-
-    def chunk(start_i, end_i):
-        return lines[start_i:end_i]
-
-    out = {}
-    for k, (rno, start) in enumerate(race_idx):
-        end = race_idx[k+1][1] if k+1 < len(race_idx) else len(lines)
-        seg = chunk(start, end)
-
-        hits = []
-        for j in range(len(seg)):
-            if "三連複" not in seg[j]:
-                continue
-            ln = seg[j]
-
-            combo_m = re.search(r"三連複\s*([0-9]+(?:[-－―—][0-9]+){2})", ln)
-            pay = _parse_money_yen(ln)
-            if combo_m and pay is not None:
-                hits.append({"combo": _norm_combo(combo_m.group(1)), "payout": int(pay)})
-                continue
-
-            look = " ".join(seg[j:j+4])
-            combo_m = re.search(r"三連複\s*([0-9]+(?:[-－―—][0-9]+){2})", look)
-            pay = _parse_money_yen(look)
-            if combo_m and pay is not None:
-                hits.append({"combo": _norm_combo(combo_m.group(1)), "payout": int(pay)})
-
-        if hits:
-            out[int(rno)] = hits
-
-    return out
-
-# ===== 注目レースBOX（上位N頭の三連複BOX） =====
-def comb3_count(n: int) -> int:
-    if n < 3:
-        return 0
-    return (n * (n - 1) * (n - 2)) // 6
-
-def box_hit_payout(top_umaban_list, sanrenpuku_rows):
-    """
-    top_umaban_list: [馬番...]
-    sanrenpuku_rows: [{"combo":"7-8-10","payout":1180}, ...] ※同着で複数あり得る
-    return: (hit:bool, payout_total:int, hit_combos:list[str])
-    """
-    s = set(int(x) for x in top_umaban_list if isinstance(x, (int, float, str)))
-    payout_total = 0
-    hit_combos = []
-
-    for row in (sanrenpuku_rows or []):
-        combo = row.get("combo", "")
-        payout = int(row.get("payout", 0) or 0)
-        nums = [int(x) for x in re.split(r"[-]", _norm_combo(combo)) if x.isdigit()]
-        if len(nums) != 3:
+    results = []
+    for tr in soup.find_all("tr"):
+        row_text = tr.get_text(" ", strip=True)
+        if "三連複" not in row_text:
             continue
-        if set(nums).issubset(s):
-            payout_total += payout
-            hit_combos.append(_norm_combo(combo))
 
-    return (payout_total > 0), payout_total, hit_combos
+        tds = [td.get_text(" ", strip=True) for td in tr.find_all(["th","td"])]
+        joined = " ".join(tds)
 
-def load_pnl_total(path: str):
-    p = Path(path)
-    if not p.exists():
-        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "hits": 0, "last_updated": None}
-    try:
-        d = json.loads(p.read_text(encoding="utf-8"))
-        if not isinstance(d, dict):
-            raise ValueError("pnl_total not dict")
-        d.setdefault("invest", 0)
-        d.setdefault("payout", 0)
-        d.setdefault("profit", int(d.get("payout", 0)) - int(d.get("invest", 0)))
-        d.setdefault("races", 0)
-        d.setdefault("hits", 0)
-        d.setdefault("last_updated", None)
-        return d
-    except Exception:
-        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "hits": 0, "last_updated": None}
+        # 1-2-3 形式
+        m_combo = re.search(r"(\d{1,2})\s*[-ー]\s*(\d{1,2})\s*[-ー]\s*(\d{1,2})", joined)
+        # 1 2 3 形式
+        if not m_combo:
+            m_combo = re.search(r"\b(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\b", joined)
+        if not m_combo:
+            continue
 
-def save_pnl_total(path: str, total: dict):
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(total, ensure_ascii=False, indent=2), encoding="utf-8")
+        a, b, c = [int(m_combo.group(i)) for i in (1,2,3)]
+        combo = tuple(sorted((a,b,c)))
 
-# ====== HTML（予想の相対色分けロジックに完全追従 + 混戦度バッジ + 収支サマリ） ======
-def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
+        m_pay = re.search(r"([\d,]+)\s*円", joined)
+        if not m_pay:
+            continue
+        payout = int(m_pay.group(1).replace(",", ""))
+
+        results.append({"combo": combo, "payout": payout})
+
+    # 同一組み合わせが重複する場合は最大に寄せる
+    uniq = {}
+    for r in results:
+        k = r["combo"]
+        uniq[k] = max(uniq.get(k, 0), int(r["payout"]))
+    return [{"combo": k, "payout": v} for k,v in uniq.items()]
+
+def calc_box_pnl(top5_umaban, refunds, unit=100):
+    """
+    top5_umaban: list[int] (5頭)
+    refunds: list[{combo:(a,b,c), payout:int}]  (payoutは100円あたり)
+    unit: 1点いくら買うか（円）
+    """
+    combos = [tuple(sorted(x)) for x in combinations([int(u) for u in top5_umaban], 3)]  # 10点
+    invest = int(len(combos) * unit)
+
+    payout = 0
+    mult = int(unit // 100) if unit >= 100 else 1
+    for r in refunds:
+        if tuple(r["combo"]) in combos:
+            payout += int(r["payout"]) * mult
+
+    hit = payout > 0
+    profit = payout - invest
+    return {
+        "type": "sanrenpuku_box",
+        "unit": unit,
+        "points": len(combos),
+        "invest": invest,
+        "payout": payout,
+        "profit": profit,
+        "hit": hit,
+        "combos": ["-".join(map(str,c)) for c in combos],
+    }
+
+# ====== HTML（予想の相対色分けロジックに追従 + 混戦度バッジ右寄せ） ======
+def render_result_html(title: str, races_out) -> str:
     import html as _html
-
     def esc(s): return _html.escape(str(s))
 
     def _clamp01(x: float) -> float:
@@ -670,11 +577,9 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             t = 0.55
         else:
             t = (float(sc) - mn) / (mx - mn)
-
         t2 = _clamp01(t ** 0.75)
         bg = _mix(LO, HI, t2)
         fg = (255, 255, 255) if _luma(bg) < 140 else (17, 24, 39)
-
         return (
             f"background:{_rgb(bg)};"
             f"color:{_rgb(fg)};"
@@ -684,60 +589,24 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
         )
 
     def badge(text: str, bg: str, fg: str="#111827") -> str:
-        return (f"<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
-                f"background:{bg};color:{fg};font-weight:900;font-size:12px;letter-spacing:.02em;line-height:1;white-space:nowrap;'>"
-                f"{esc(text)}</span>")
+        return (
+            "<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
+            f"background:{bg};color:{fg};font-weight:900;font-size:12px;letter-spacing:.02em;"
+            "line-height:1;white-space:nowrap;'>"
+            f"{esc(text)}</span>"
+        )
 
     def section_title(left: str, right_badge: str, bg: str) -> str:
-        return (f"<div style='display:flex;align-items:center;justify-content:space-between;"
-                f"padding:10px 12px;border-radius:12px;background:{bg};margin:10px 0 8px;'>"
-                f"<strong style='font-size:14px;'>{esc(left)}</strong>"
-                f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{right_badge}</div>"
-                f"</div>")
+        return (
+            "<div style='display:flex;align-items:center;justify-content:space-between;"
+            f"padding:10px 12px;border-radius:12px;background:{bg};margin:10px 0 8px;'>"
+            f"<strong style='font-size:14px;'>{esc(left)}</strong>"
+            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{right_badge}</div>"
+            "</div>"
+        )
 
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
-
-    # ===== 収支サマリ（見た目は崩さず：バッジ＋カード） =====
-    if pnl_summary:
-        invest = int(pnl_summary.get("invest", 0) or 0)
-        payout = int(pnl_summary.get("payout", 0) or 0)
-        profit = int(pnl_summary.get("profit", 0) or 0)
-        races = int(pnl_summary.get("focus_races", 0) or 0)
-        hits = int(pnl_summary.get("focus_hits", 0) or 0)
-        unit = int(pnl_summary.get("bet_unit", BET_UNIT) or BET_UNIT)
-        nbox = int(pnl_summary.get("box_n", BET_BOX_N) or BET_BOX_N)
-        pts = int(pnl_summary.get("bet_points_per_race", comb3_count(nbox)) or comb3_count(nbox))
-
-        roi = 0.0
-        if invest > 0:
-            roi = round((payout / invest) * 100.0, 1)
-        hit_rate = 0.0
-        if races > 0:
-            hit_rate = round((hits / races) * 100.0, 1)
-
-        profit_badge = badge(f"収支 {profit:+,}円", "#f59e0b" if profit >= 0 else "#ef4444", "#ffffff")
-        roi_badge = badge(f"回収率 {roi:.1f}%", "#6b7280", "#ffffff")
-        hit_badge = badge(f"的中率 {hit_rate:.1f}%", "#6b7280", "#ffffff")
-
-        parts.append(
-            "<div style='margin:14px 0 18px;padding:12px 12px;"
-            "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
-            "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;'>"
-            f"<div style='font-size:16px;font-weight:900;color:#111827;'>今回の収支サマリー</div>"
-            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{profit_badge}{roi_badge}{hit_badge}</div>"
-            "</div>"
-            "<div style='margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;'>"
-            f"{badge(f'注目レース {races}本', '#bfdbfe')}"
-            f"{badge(f'的中 {hits}本', '#bfdbfe')}"
-            f"{badge(f'買い目 {nbox}頭BOX（{pts}点）', '#bfdbfe')}"
-            f"{badge(f'1点 {unit}円', '#bfdbfe')}"
-            f"{badge(f'投資 {invest:,}円', '#6b7280', '#ffffff')}"
-            f"{badge(f'払戻 {payout:,}円', '#6b7280', '#ffffff')}"
-            "</div>"
-            "<div style='margin-top:8px;color:#6b7280;font-size:12px;'>※指数上位5頭3連複BOX注目レースのみ集計</div>"
-            "</div>"
-        )
 
     for r in races_out:
         rno = int(r["race_no"])
@@ -746,9 +615,9 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
         pred = r.get("pred_top5", [])
         top3 = r.get("result_top3", [])
         pred_by_umaban = {int(x["umaban"]): x for x in pred}
-
         scores_in_race = [float(p.get("score", 0.0)) for p in pred if isinstance(p.get("score", None), (int, float))]
 
+        # 混戦バッジ（レース名行の右端）
         k = r.get("konsen") or {}
         kval = k.get("value", None)
         is_focus = bool(k.get("is_focus", False))
@@ -774,6 +643,29 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             "</div>"
         )
 
+        # 注目レース：BOX収支のミニ表示（スタイル崩さずバッジ）
+        bet = r.get("bet")
+        if bet and isinstance(bet, dict):
+            invest = int(bet.get("invest", 0))
+            payout = int(bet.get("payout", 0))
+            profit = int(bet.get("profit", payout - invest))
+            points = int(bet.get("points", 0))
+            unit = int(bet.get("unit", BET_UNIT))
+            hit = bool(bet.get("hit", False))
+
+            b1 = badge(f"三連複BOX {points}点×{unit}円", "#bfdbfe")
+            b2 = badge(f"投資 {invest}円", "#6b7280", "#ffffff")
+            b3 = badge(f"払戻 {payout}円", "#6b7280", "#ffffff")
+            b4 = badge(("収支 +" if profit >= 0 else "収支 ") + f"{profit}円", "#f59e0b" if profit >= 0 else "#ef4444", "#ffffff")
+            b5 = badge("的中" if hit else "ハズレ", "#f59e0b" if hit else "#6b7280", "#ffffff")
+
+            parts.append(
+                "<div style='margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;'>"
+                f"{b1}{b2}{b3}{b4}{b5}"
+                "</div>"
+            )
+
+        # --- 結果（赤系見出しだけ赤、指数色は予想と同じ相対色） ---
         parts.append(section_title("結果（1〜3着）", badge("RESULT", "#fecaca"), "#fff1f2"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;margin-bottom:10px;'>")
@@ -816,6 +708,7 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
 
         parts.append("</tbody></table></div>")
 
+        # --- 予想（青系） ---
         parts.append(section_title("指数上位5頭", badge("PRED", "#bfdbfe"), "#eff6ff"))
         parts.append("<div style='overflow-x:auto;'>")
         parts.append("<table style='width:100%;border-collapse:collapse;'>")
@@ -829,9 +722,7 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             "</tr></thead><tbody>"
         )
 
-        pos_by_umaban = {}
-        for x in top3:
-            pos_by_umaban[int(x["umaban"])] = int(x["rank"])
+        pos_by_umaban = {int(x["umaban"]): int(x["rank"]) for x in top3} if top3 else {}
 
         for i, p in enumerate(pred):
             bgrow = "#ffffff" if i % 2 == 0 else "#f8fafc"
@@ -853,44 +744,70 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             )
 
         parts.append("</tbody></table></div>")
-
-        bet = r.get("bet_box") or {}
-        if bet.get("is_focus"):
-            hit = bool(bet.get("hit"))
-            payout = int(bet.get("payout", 0) or 0)
-            invest = int(bet.get("invest", 0) or 0)
-            profit = int(bet.get("profit", 0) or 0)
-
-            b1 = badge("注目BOX", "#f59e0b", "#ffffff")
-            b2 = badge(("的中" if hit else "不的中"), "#f59e0b" if hit else "#6b7280", "#ffffff")
-            b3 = badge(f"払戻 {payout:,}円", "#6b7280", "#ffffff")
-            b4 = badge(f"投資 {invest:,}円", "#6b7280", "#ffffff")
-            b5 = badge(f"収支 {profit:+,}円", "#f59e0b" if profit >= 0 else "#ef4444", "#ffffff")
-
-            parts.append("<div style='margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;'>"
-                         f"{b1}{b2}{b3}{b4}{b5}</div>")
-
         parts.append("</div>")
 
     parts.append("</div>")
     return "\n".join(parts)
 
+
+def write_pnl_total_json_from_all_results():
+    """
+    output/result_*.json を全部集計して output/pnl_total.json を作る
+    """
+    invest = 0
+    payout = 0
+    races = 0
+    hits = 0
+
+    for fp in sorted(glob.glob("output/result_*.json")):
+        try:
+            data = json.loads(Path(fp).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        for r in data.get("races", []):
+            bet = r.get("bet")
+            if not bet:
+                continue
+            races += 1
+            invest += int(bet.get("invest", 0))
+            payout += int(bet.get("payout", 0))
+            if bool(bet.get("hit", False)):
+                hits += 1
+
+    profit = payout - invest
+    roi = round((payout / invest) * 100.0, 1) if invest > 0 else None
+    hit_rate = round((hits / races) * 100.0, 1) if races > 0 else None
+
+    out = {
+        "races": races,
+        "hits": hits,
+        "invest": invest,
+        "payout": payout,
+        "profit": profit,
+        "roi": roi,
+        "hit_rate": hit_rate,
+        "last_updated": datetime.now().isoformat(timespec="seconds"),
+    }
+
+    Path("output/pnl_total.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("[OK] output/pnl_total.json updated")
+
+
 def main():
     yyyymmdd = os.environ.get("DATE") or datetime.now().strftime("%Y%m%d")
     debug = os.environ.get("DEBUG", "").strip() == "1"
-    os.makedirs("output", exist_ok=True)
+    Path("output").mkdir(exist_ok=True)
 
     print(f"[INFO] DATE={yyyymmdd}")
     print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
     print(f"[INFO] KONSEN name={KONSEN_NAME} gap12_mid={KONSEN_GAP12_MID} gap15_mid={KONSEN_GAP15_MID} focus_th={KONSEN_FOCUS_TH}")
-    print(f"[INFO] BET bet_unit={BET_UNIT} box_n={BET_BOX_N}")
+    print(f"[INFO] BET enabled={BET_ENABLED} unit={BET_UNIT}")
 
     active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
 
     SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-
-    pnl_total = load_pnl_total(PNL_FILE)
 
     for track in active:
         baba = BABA_CODE.get(track)
@@ -915,8 +832,6 @@ def main():
                 continue
             races = parse_keibablood_tables(kb_html)
             if not races:
-                if debug:
-                    print(f"[MISS] {track} series=-{i} : tables not found")
                 continue
             found = True
             picked_url = kb_url
@@ -928,21 +843,9 @@ def main():
             print(f"[SKIP] {track}: keibablood 未発見（-2優先で探索済み）")
             continue
 
-        ref_url = refundmoney_url(baba, yyyymmdd)
-        ref_html = fetch(ref_url, debug=False)
-        sanrenpuku_map = parse_refundmoney_sanrenpuku_by_race(ref_html) if ref_html else {}
-        if debug:
-            print(f"[DEBUG] refundmoney={ref_url}  races_with_sanrenpuku={len(sanrenpuku_map)}")
-
         date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
-
         races_out = []
         track_incomplete = False
-
-        focus_races = 0
-        focus_hits = 0
-        invest_sum = 0
-        payout_sum = 0
 
         for rno in sorted(kb_races.keys()):
             fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
@@ -962,7 +865,6 @@ def main():
 
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
                 add = jockey_add_points(*rates) if rates else 0.0
-
                 sp = sp_by_umaban.get(u)
 
                 rows.append({
@@ -974,8 +876,7 @@ def main():
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
-            est_sp, est_info = estimate_sp_factory(rows, debug=False)
-
+            est_sp, _ = estimate_sp_factory(rows, debug=False)
             for r in rows:
                 r["sp_est"] = float(est_sp(r["base_index"])) if r["sp_raw"] is None else float(r["sp_raw"])
 
@@ -985,7 +886,6 @@ def main():
                 base = float(r["base_index"])
                 add = float(r["jockey_add"])
                 score = (SP_W * sp) + (KB_W * base) + (JOCKEY_W * add)
-
                 horses_scored.append({
                     "umaban": int(r["umaban"]),
                     "name": r["name"],
@@ -1005,12 +905,6 @@ def main():
             horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
             top5 = horses_scored[:5]
 
-            top5_scores = [float(h["score"]) for h in top5]
-            konsen = calc_konsen_gap(top5_scores)
-
-            if KONSEN_DEBUG:
-                print(f"[KONSEN] {track} {rno}R top5_scores={list(map(lambda v: round(v,2), top5_scores))} konsen={konsen}")
-
             pred_top5 = []
             for j, hh in enumerate(top5):
                 pred_top5.append({
@@ -1025,6 +919,11 @@ def main():
                     "source": hh.get("source", {}),
                 })
 
+            top5_scores = [float(h["score"]) for h in top5]
+            konsen = calc_konsen_gap(top5_scores)
+            if KONSEN_DEBUG:
+                print(f"[KONSEN] {track} {rno}R top5_scores={list(map(lambda v: round(v,2), top5_scores))} konsen={konsen}")
+
             mark_url = (
                 "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
                 f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
@@ -1032,39 +931,18 @@ def main():
             rm_html = fetch(mark_url, debug=False)
             result_top3 = parse_top3_from_racemark(rm_html) if rm_html else []
 
-            bet_box = {"is_focus": False}
-            is_focus = bool(konsen.get("is_focus", False))
-            if is_focus:
-                focus_races += 1
-                nbox = min(BET_BOX_N, len(pred_top5))
-                pts = comb3_count(nbox)
-                invest = pts * BET_UNIT
+            refund_url = (
+                "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList"
+                f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
+            )
 
-                top_umaban = [p["umaban"] for p in pred_top5[:nbox]]
-                san = sanrenpuku_map.get(int(rno), [])
-                hit, payout, combos = box_hit_payout(top_umaban, san)
-
-                if hit:
-                    focus_hits += 1
-
-                profit = int(payout) - int(invest)
-
-                invest_sum += invest
-                payout_sum += payout
-
-                bet_box = {
-                    "is_focus": True,
-                    "threshold": float(KONSEN_FOCUS_TH),
-                    "box_n": int(nbox),
-                    "bet_unit": int(BET_UNIT),
-                    "bet_points": int(pts),
-                    "invest": int(invest),
-                    "hit": bool(hit),
-                    "payout": int(payout),
-                    "profit": int(profit),
-                    "hit_combos": combos,
-                    "sanrenpuku_rows": san,
-                }
+            bet_info = None
+            refunds = []
+            if BET_ENABLED and bool(konsen.get("is_focus", False)):
+                rf_html = fetch(refund_url, debug=False)
+                refunds = parse_sanrenpuku_refunds(rf_html) if rf_html else []
+                top5_uma = [int(x["umaban"]) for x in pred_top5]
+                bet_info = calc_box_pnl(top5_uma, refunds, unit=BET_UNIT)
 
             races_out.append({
                 "race_no": int(rno),
@@ -1072,11 +950,12 @@ def main():
                 "konsen": konsen,
                 "pred_top5": pred_top5,
                 "result_top3": result_top3,
-                "bet_box": bet_box,
+                "bet": bet_info,
+                "refund_sanrenpuku": refunds,  # 検証用（空でもOK）
                 "source": {
                     "racemark_url": mark_url,
+                    "refund_url": refund_url,
                     "kichiuma_fp_url": fp_url,
-                    "refundmoney_url": ref_url,
                 }
             })
 
@@ -1087,35 +966,12 @@ def main():
             continue
 
         title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 結果"
-
-        profit_sum = int(payout_sum) - int(invest_sum)
-        pnl_summary = {
-            "focus_races": int(focus_races),
-            "focus_hits": int(focus_hits),
-            "box_n": int(BET_BOX_N),
-            "bet_unit": int(BET_UNIT),
-            "bet_points_per_race": int(comb3_count(BET_BOX_N)),
-            "invest": int(invest_sum),
-            "payout": int(payout_sum),
-            "profit": int(profit_sum),
-        }
-
-        pnl_total["invest"] = int(pnl_total.get("invest", 0) or 0) + int(invest_sum)
-        pnl_total["payout"] = int(pnl_total.get("payout", 0) or 0) + int(payout_sum)
-        pnl_total["profit"] = int(pnl_total["payout"]) - int(pnl_total["invest"])
-        pnl_total["races"] = int(pnl_total.get("races", 0) or 0) + int(focus_races)
-        pnl_total["hits"] = int(pnl_total.get("hits", 0) or 0) + int(focus_hits)
-        pnl_total["last_updated"] = datetime.now().isoformat(timespec="seconds")
-        save_pnl_total(PNL_FILE, pnl_total)
-
         out = {
             "date": yyyymmdd,
             "place": track,
             "place_code": code,
             "title": title,
             "races": races_out,
-            "pnl_summary": pnl_summary,
-            "pnl_total": pnl_total,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "weights": {"SP_W": SP_W, "KB_W": KB_W, "JOCKEY_W": JOCKEY_W},
             "konsen_config": {
@@ -1124,21 +980,27 @@ def main():
                 "gap15_mid": KONSEN_GAP15_MID,
                 "focus_th": KONSEN_FOCUS_TH,
             },
+            "bet_config": {
+                "enabled": BET_ENABLED,
+                "type": "sanrenpuku_box",
+                "unit": BET_UNIT,
+                "focus_th": KONSEN_FOCUS_TH,
+            },
             "source": {
                 "keibablood_url": picked_url,
                 "keibablood_series_used": used_series,
-                "kaisekisya_url": jockey_url,
-                "refundmoney_url": ref_url,
+                "kaisekisya_url": jockey_url
             }
         }
 
         json_path = Path("output") / f"result_{yyyymmdd}_{code}.json"
         html_path = Path("output") / f"result_{yyyymmdd}_{code}.html"
-
         json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-        html_path.write_text(render_result_html(title, races_out, pnl_summary), encoding="utf-8")
+        html_path.write_text(render_result_html(title, races_out), encoding="utf-8")
+        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (keibablood=-{used_series})")
 
-        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (keibablood=-{used_series})  focus={focus_races} hits={focus_hits} profit={profit_sum:+,}円")
+    # ★最後に「過去分も含めた累計」を必ず作る（トップ表示用）
+    write_pnl_total_json_from_all_results()
 
 if __name__ == "__main__":
     main()
