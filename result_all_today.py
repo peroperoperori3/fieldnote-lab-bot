@@ -726,6 +726,8 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             f"{badge(f'投資 {invest:,}円', '#6b7280', '#ffffff')}"
             f"{badge(f'払戻 {payout:,}円', '#6b7280', '#ffffff')}"
             "</div>"
+            "<div style='margin-top:8px;color:#6b7280;font-size:12px;'>※集計は注目レースのみ上位5頭三連複BOX</div>"
+            "</div>"
         )
 
     for r in races_out:
