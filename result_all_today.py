@@ -472,8 +472,12 @@ def parse_top3_from_racemark(html_text: str):
 # ====== NEW: RaceMarkTableから三連複払戻を抜く ======
 def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
     """
-    RaceMarkTable 内から「払戻」テーブルを見つけ、
-    行の式別が「三連複」のものだけを列ベースで抽出する。
+    RaceMarkTable 内の「三連複」払戻を拾う（超堅牢版）
+
+    ✅ やること：
+    - ページ内の全 tr を走査
+    - 「三連複」を含む行だけ対象
+    - その行の中から「組番(1-2-3)」と「払戻(1,180円など)」を抽出
 
     return: list[ {"combo": (a,b,c), "payout": int} ]  # payout=100円あたり
     """
@@ -482,92 +486,100 @@ def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
 
     soup = BeautifulSoup(html_text, "lxml")
 
-    # 1) 「払戻」系のテーブルを探す（ヘッダに 払戻/組番/式別 があるもの）
-    target_table = None
-    for t in soup.find_all("table"):
-        ths = [th.get_text(" ", strip=True) for th in t.find_all("th")]
-        hdr = " ".join(ths)
-        if ("払戻" in hdr) and (("組" in hdr) or ("組番" in hdr) or ("馬番" in hdr)) and (("式別" in hdr) or ("式" in hdr)):
-            target_table = t
-            break
-
-    if target_table is None:
-        return []
-
-    trs = target_table.find_all("tr")
-    if len(trs) < 2:
-        return []
-
-    # 2) ヘッダ行を確定（th/td混在もあるので先頭数行から探す）
-    header_idx = None
-    headers = None
-    for i, tr in enumerate(trs[:4]):
-        cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
-        joined = " ".join(cells)
-        if ("式別" in joined) and (("払戻" in joined) or ("払戻金" in joined)) and (("組" in joined) or ("組番" in joined) or ("馬番" in joined)):
-            header_idx = i
-            headers = cells
-            break
-    if header_idx is None or not headers:
-        return []
-
-    def find_col(keys, hdrs):
-        for j, h in enumerate(hdrs):
-            for k in keys:
-                if k in h:
-                    return j
-        return None
-
-    c_type = find_col(["式別", "式"], headers)
-    c_kumi = find_col(["組番", "組", "馬番"], headers)
-    c_pay  = find_col(["払戻", "払戻金", "払戻額", "金額"], headers)
-
-    if c_type is None or c_kumi is None or c_pay is None:
-        return []
-
     out = []
-    for tr in trs[header_idx + 1:]:
-        tds = tr.find_all(["th", "td"])
-        if not tds:
-            continue
-        vals = [td.get_text(" ", strip=True) for td in tds]
-        if len(vals) <= max(c_type, c_kumi, c_pay):
-            continue
+    seen = set()
 
-        bet_type = re.sub(r"\s+", "", vals[c_type])
-        if "三連複" not in bet_type:
+    # 1) まずは行(tr)ベースで「三連複」を含む行を拾う（これが本命）
+    for tr in soup.find_all("tr"):
+        cells = tr.find_all(["th", "td"])
+        if not cells:
             continue
 
-        kumi_raw = vals[c_kumi]
-        pay_raw  = vals[c_pay]
+        texts = [c.get_text(" ", strip=True) for c in cells]
+        joined = " ".join(texts)
 
-        # 組番：数字3つを「そのセルからだけ」取る（行全体から拾わない）
-        nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", kumi_raw)]
+        if "三連複" not in joined:
+            continue
+
+        # 組番候補（"1-2-3" "1 2 3" "1→2→3" みたいなのも拾う）
+        combo = None
+        for t in texts:
+            # 1-2-3 / 1–2–3 / 1 2 3 / 1→2→3 / 1→2-3 などを数字だけ抽出
+            nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", t)]
+            nums = [n for n in nums if 1 <= n <= 18]
+            if len(nums) >= 3:
+                a, b, c = sorted(nums[:3])
+                if len({a, b, c}) == 3:
+                    combo = (a, b, c)
+                    break
+
+        if combo is None:
+            continue
+
+        # 払戻候補：カンマ区切り or 3桁以上の数字を優先
+        payout = None
+        for t in texts:
+            # 例: "1,180円" "7100円" "100円"
+            m = re.search(r"(\d[\d,]{2,})\s*円", t)
+            if m:
+                payout = int(m.group(1).replace(",", ""))
+                break
+
+        # "円"が取れない表示形式もあるので保険
+        if payout is None:
+            for t in texts:
+                m = re.search(r"\b(\d[\d,]{2,})\b", t)
+                if m:
+                    v = int(m.group(1).replace(",", ""))
+                    if v >= 100:
+                        payout = v
+                        break
+
+        if payout is None or payout < 100:
+            continue
+
+        if combo in seen:
+            continue
+        seen.add(combo)
+        out.append({"combo": combo, "payout": int(payout)})
+
+    if out:
+        return out
+
+    # 2) もし tr で取れなかった時だけ、テキストchunk方式の保険（超フォールバック）
+    text = soup.get_text("\n", strip=True)
+    if "三連複" not in text:
+        return []
+
+    # 「三連複」行っぽいところの近辺だけ見る
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    for i, ln in enumerate(lines):
+        if "三連複" not in ln:
+            continue
+
+        window = " ".join(lines[max(0, i-2): min(len(lines), i+4)])
+
+        nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", window)]
         nums = [n for n in nums if 1 <= n <= 18]
         if len(nums) < 3:
             continue
         a, b, c = sorted(nums[:3])
-
-        # 三連複は3頭全部違う（重複は除外）
         if len({a, b, c}) != 3:
             continue
 
-        # 払戻：最低でも3桁(100円以上)を要求（1とか10を弾く）
-        m = re.search(r"(\d[\d,]{2,})", pay_raw)  # 例: 1,180 / 7100 / 100
+        m = re.search(r"(\d[\d,]{2,})\s*円", window)
         if not m:
             continue
         payout = int(m.group(1).replace(",", ""))
         if payout < 100:
             continue
 
-        out.append({"combo": (a, b, c), "payout": payout})
+        combo = (a, b, c)
+        if combo not in seen:
+            seen.add(combo)
+            out.append({"combo": combo, "payout": payout})
 
-    # 3) 同一comboが複数取れた場合は最大払戻を残す
-    best = {}
-    for x in out:
-        combo = x["combo"]
-        best[combo] = max(best.get(combo, 0), int(x["payout"]))
-    return [{"combo": k, "payout": v} for k, v in best.items()]
+    return out
 
 # ====== 三連複BOX(5頭=10点) 計算 ======
 def calc_trifecta_box_invest(unit: int) -> int:
