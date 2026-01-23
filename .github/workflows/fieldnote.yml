@@ -12,6 +12,9 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -99,3 +102,25 @@ jobs:
         if: ${{ inputs.mode == 'result' && steps.chk_result.outputs.HAS == '1' }}
         run: |
           MODE=result python wp_post.py
+
+      - name: Commit & Push pnl_total.json (if exists/changed)
+        if: ${{ inputs.mode == 'result' }}
+        shell: bash
+        run: |
+          if [ ! -f output/pnl_total.json ]; then
+            echo "[SKIP] output/pnl_total.json not found"
+            exit 0
+          fi
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+
+          git add output/pnl_total.json
+
+          if git diff --cached --quiet; then
+            echo "[SKIP] pnl_total.json no changes"
+            exit 0
+          fi
+
+          git commit -m "update pnl_total.json (${DATE})"
+          git push
