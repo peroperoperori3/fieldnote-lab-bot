@@ -482,11 +482,18 @@ def parse_top3_from_racemark(html_text: str):
     return top
 
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
+# ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
 def parse_sanrenpuku_refunds(html_text: str):
     """
     return: list[ {combo:(a,b,c), payout:int} ]  (payout=100円あたり)
-    同着などで三連複が複数成立: 複数返す（該当combo分を合算して扱える）
+
+    改善点：
+    - 同着/特払などで「三連複の組番が1セルに複数」あるケースを拾う
+    - 払戻も複数あるケースに対応（組番と払戻をなるべく1対1で対応付け）
+    - それでも合わない時は “取れる範囲で” ペア化（当たってるのに0円を避ける）
     """
+    refund_debug = os.environ.get("REFUND_DEBUG", "").strip() == "1"
+
     soup = BeautifulSoup(html_text, "lxml")
     tables = soup.find_all("table")
     best = None
@@ -544,6 +551,47 @@ def parse_sanrenpuku_refunds(html_text: str):
     if c_kumi is None or c_pay is None:
         return []
 
+    def extract_combos(text: str):
+        """
+        例:
+          "1-2-3"
+          "1 2 3"
+          "1-2-3  4-5-6"
+          "1-2-3\n4-5-6"
+        みたいなのを全部拾って combo list を返す
+        """
+        s = (text or "").replace("－", "-").replace("―", "-").replace("—", "-")
+        s = re.sub(r"\s+", " ", s).strip()
+
+        combos = []
+        # 3つの数字が何らかの区切りで並ぶパターンを全部拾う
+        for a, b, c in re.findall(r"(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})", s):
+            aa, bb, cc = sorted([int(a), int(b), int(c)])
+            combos.append((aa, bb, cc))
+
+        # 重複除去（同じcomboが複数回出るHTMLもある）
+        uniq = []
+        seen = set()
+        for x in combos:
+            if x not in seen:
+                seen.add(x)
+                uniq.append(x)
+        return uniq
+
+    def extract_payouts(text: str):
+        """
+        "960円" "5,930円" "960 5930" などから全部数字を拾う
+        """
+        s = (text or "")
+        nums = re.findall(r"[\d,]+", s)
+        outs = []
+        for n in nums:
+            try:
+                outs.append(int(n.replace(",", "")))
+            except:
+                pass
+        return outs
+
     out = []
     for tr in rows[1:]:
         cells = tr.find_all(["th", "td"])
@@ -561,18 +609,29 @@ def parse_sanrenpuku_refunds(html_text: str):
         kumi_raw = vals[c_kumi].strip()
         pay_raw  = vals[c_pay].strip()
 
-        nums = re.findall(r"\d+", kumi_raw)
-        if len(nums) < 3:
-            continue
-        a, b, c = sorted([int(nums[0]), int(nums[1]), int(nums[2])])
-        combo = (a, b, c)
+        combos = extract_combos(kumi_raw)
+        pays = extract_payouts(pay_raw)
 
-        m = re.search(r"([\d,]+)", pay_raw)
-        if not m:
-            continue
-        payout = int(m.group(1).replace(",", ""))  # 100円あたり
+        if refund_debug:
+            print(f"[REFUND_DEBUG] 三連複 row: kumi='{kumi_raw}' -> combos={combos}")
+            print(f"[REFUND_DEBUG] 三連複 row: pay ='{pay_raw}'  -> pays={pays}")
 
-        out.append({"combo": combo, "payout": payout})
+        if not combos or not pays:
+            continue
+
+        # できるだけ1対1で対応付け
+        if len(pays) == len(combos):
+            for i in range(len(combos)):
+                out.append({"combo": combos[i], "payout": int(pays[i])})
+        elif len(pays) == 1 and len(combos) > 1:
+            # 払戻が1個しか取れないときは全comboに同じ払戻を付ける（0円回避）
+            for c in combos:
+                out.append({"combo": c, "payout": int(pays[0])})
+        else:
+            # 長さが合わないときは取れる範囲でペア化
+            n = min(len(pays), len(combos))
+            for i in range(n):
+                out.append({"combo": combos[i], "payout": int(pays[i])})
 
     return out
 
