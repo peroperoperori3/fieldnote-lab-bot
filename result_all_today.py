@@ -27,6 +27,7 @@ KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
 KONSEN_FOCUS_TH  = float(os.environ.get("KONSEN_FOCUS_TH", "50"))
 KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
+REFUND_DEBUG = os.environ.get("REFUND_DEBUG", "").strip() == "1"
 
 # ===== 注目レース：三連複BOX（上位5頭）=====
 BET_ENABLED = os.environ.get("BET_ENABLED", "1").strip() != "0"
@@ -1063,6 +1064,11 @@ def main():
             refund_html = fetch(refund_url, debug=debug) if refund_url else ""
             refunds = parse_sanrenpuku_refunds(refund_html) if refund_html else []
 
+            if REFUND_DEBUG:
+                print(f"[REFUND_DEBUG] {track} {rno}R refund_url={refund_url}")
+                print(f"[REFUND_DEBUG] {track} {rno}R refunds_found={len(refunds)} refunds={refunds[:5]}")
+
+
             # 注目レースBOX収支（混戦度>=閾値のみ）
             bet = {
                 "enabled": bool(BET_ENABLED),
@@ -1090,10 +1096,20 @@ def main():
                     if (a in box_set) and (b in box_set) and (c in box_set):
                         hit_combo_list = [combo]
 
-                pay = calc_payout_for_box(hit_combo_list, refunds, BET_UNIT)
-                bet["payout"] = int(pay)
-                bet["profit"] = int(pay - inv)
-                bet["hits"] = 1 if pay > 0 else 0
+            if REFUND_DEBUG:
+                print(f"[REFUND_DEBUG] {track} {rno}R top3={result_top3}")
+                print(f"[REFUND_DEBUG] {track} {rno}R box_umaban={sorted(top5_umaban)}")
+                print(f"[REFUND_DEBUG] {track} {rno}R hit_combo_list={hit_combo_list}")
+
+            pay = calc_payout_for_box(hit_combo_list, refunds, BET_UNIT)
+
+            if REFUND_DEBUG:
+                print(f"[REFUND_DEBUG] {track} {rno}R pay={pay} (unit={BET_UNIT})")
+
+            bet["payout"] = int(pay)
+            bet["profit"] = int(pay - inv)
+            bet["hits"] = 1 if pay > 0 else 0
+
 
                 # 合算
                 pnl_total["races"] += 1
