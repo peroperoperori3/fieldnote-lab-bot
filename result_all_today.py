@@ -485,6 +485,36 @@ def parse_top3_from_racemark(html_text: str):
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
 # ====== 払戻：三連複（RefundMoneyList）列ベースで厳密 ======
 def parse_sanrenpuku_refunds(html_text: str, rno: int):
+    
+    from itertools import combinations
+
+def calc_trifecta_box_invest(unit: int) -> int:
+    # 5頭BOX -> C(5,3)=10点
+    return int(unit) * 10
+
+def calc_payout_for_box(hit_combo_list, refunds, unit: int) -> int:
+    """
+    三連複BOX用・安全版
+    - 組番の順序違いを完全無視
+    - 同着で複数ある場合も全部合算
+    """
+    if not hit_combo_list or not refunds:
+        return 0
+
+    hit_sets = {frozenset(c) for c in hit_combo_list}
+
+    payout_total = 0
+    for rf in refunds:
+        combo = rf.get("combo")
+        if not combo or len(combo) != 3:
+            continue
+
+        if frozenset(combo) in hit_sets:
+            payout100 = int(rf.get("payout", 0))  # 100円あたり
+            payout_total += int(payout100 * (int(unit) / 100))
+
+    return int(payout_total)
+    
     """
     RefundMoneyList は「当日全レース」が1ページに入ってることがある。
     なので "rnoR" の近辺だけを抜き出して、そこから三連複を拾う。
