@@ -16,6 +16,34 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
+# ===== PNL（累計収支）保存用 =====
+PNL_FILE = os.environ.get("PNL_FILE", "output/pnl_total.json")
+
+def load_pnl_total(path: str):
+    p = Path(path)
+    if not p.exists():
+        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "hits": 0, "last_updated": None}
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(d, dict):
+            raise ValueError("invalid pnl_total.json")
+        d.setdefault("invest", 0)
+        d.setdefault("payout", 0)
+        d.setdefault("profit", 0)
+        d.setdefault("races", 0)
+        d.setdefault("hits", 0)
+        d.setdefault("last_updated", None)
+        return d
+    except Exception:
+        return {"invest": 0, "payout": 0, "profit": 0, "races": 0, "hits": 0, "last_updated": None}
+
+def save_pnl_total(path: str, total: dict):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(
+        json.dumps(total, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
 UA = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ja,en;q=0.8"}
 MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 
@@ -1162,12 +1190,7 @@ def main():
         }
 
         # 累計も更新（トップページ用に使える）
-        pnl_total["invest"] = int(pnl_total.get("invest", 0) or 0) + int(invest_sum)
-        pnl_total["payout"] = int(pnl_total.get("payout", 0) or 0) + int(payout_sum)
-        pnl_total["profit"] = int(pnl_total["payout"]) - int(pnl_total["invest"])
-        pnl_total["races"] = int(pnl_total.get("races", 0) or 0) + int(focus_races)
-        pnl_total["last_updated"] = datetime.now().isoformat(timespec="seconds")
-        save_pnl_total(PNL_FILE, pnl_total)
+        pnl_total = load_pnl_total(PNL_FILE)
 
         out = {
             "type": "fieldnote_result",
@@ -1205,8 +1228,19 @@ def main():
         print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (keibablood=-{used_series})  focus={focus_races} profit={profit_sum:+,}円")
 
     # pnl_total は随時保存済みだけど、最後にもう一回整形して書き直し（保険）
+    invest = int(pnl_total.get("invest", 0) or 0)
+    payout = int(pnl_total.get("payout", 0) or 0)
+    races  = int(pnl_total.get("races", 0) or 0)
+    hits   = int(pnl_total.get("hits", 0) or 0)
+
+    pnl_total["profit"] = int(payout - invest)
+    pnl_total["roi"] = round((payout / invest) * 100.0, 1) if invest > 0 else None
+    pnl_total["hit_rate"] = round((hits / races) * 100.0, 1) if races > 0 else None
+    pnl_total["last_updated"] = datetime.now().isoformat(timespec="seconds")
+
     save_pnl_total(PNL_FILE, pnl_total)
     print(f"[OK] wrote {PNL_FILE}")
+
 
 if __name__ == "__main__":
     main()
