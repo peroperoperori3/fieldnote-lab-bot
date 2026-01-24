@@ -12,6 +12,9 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -36,6 +39,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -47,22 +52,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml python-dotenv
 
+      # ✅ output を丸ごと消さない（pnl_total.json を固定化してしまうため）
+      #    代わりに「当日の生成物だけ」消す（pnl_total.json は残す）
       - name: Clean output (keep pnl_total.json)
         shell: bash
         run: |
           mkdir -p output
-          if [ -f output/pnl_total.json ]; then
-            cp output/pnl_total.json /tmp/pnl_total.json
-            echo "[INFO] keep pnl_total.json"
-          fi
-
-          rm -rf output
-          mkdir -p output
-
-          if [ -f /tmp/pnl_total.json ]; then
-            cp /tmp/pnl_total.json output/pnl_total.json
-            echo "[INFO] restored pnl_total.json"
-          fi
+          rm -f output/predict_*.json output/predict_*.html || true
+          rm -f output/result_*.json  output/result_*.html  || true
+          echo "[INFO] cleaned predict/result outputs, kept output/pnl_total.json (if any)"
 
       # ===== predict =====
       - name: Run predict (try)
@@ -111,3 +109,28 @@ jobs:
         if: ${{ inputs.mode == 'result' && steps.chk_result.outputs.HAS == '1' }}
         run: |
           MODE=result python wp_post.py
+
+      # ✅ ここが最重要：output/pnl_total.json を含め output を GitHub に反映する
+      - name: Commit & push output
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          # output 配下の生成物を全部コミット対象に（pnl_total.json も含む）
+          git add output/* || true
+
+          echo "[INFO] git status:"
+          git status
+
+          # 変更がないなら何もしない
+          git diff --cached --quiet && echo "[INFO] no changes to commit" && exit 0
+
+          git commit -m "update output (${{
+            inputs.mode
+          }}) [skip ci]" || true
+
+          # 競合回避（他のworkflowや手動pushがあっても潰れにくい）
+          git pull --rebase origin main || true
+          git push origin main
