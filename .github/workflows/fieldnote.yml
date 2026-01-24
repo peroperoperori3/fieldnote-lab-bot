@@ -67,13 +67,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p output
-
-          # macOS互換は不要（ubuntuなのでfind -mtimeが使える）
-          # 90日より古い predict/result の json/html を削除
           find output -type f \
             \( -name "predict_*.json" -o -name "predict_*.html" -o -name "result_*.json" -o -name "result_*.html" \) \
             -mtime +90 -print -delete || true
-
           echo "[INFO] prune done (older than 90 days)"
 
       # ===== predict =====
@@ -124,25 +120,29 @@ jobs:
         run: |
           MODE=result python wp_post.py
 
-      # ✅ ここが最重要：output/pnl_total.json を含め output を GitHub に反映する
+      # ✅ 最重要：削除も含めて output を確実に GitHub に反映する（rebaseしない）
       - name: Commit & push output
         if: ${{ always() }}
         shell: bash
         run: |
+          set -e
+
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          # output 配下の生成物を全部コミット対象に（pnl_total.json も含む）
-          git add output/* || true
+          # ★ここが肝：削除も含める
+          git add -A output/
 
           echo "[INFO] git status:"
           git status
 
-          # 変更がないなら何もしない
+          # 変更がないなら終了
           git diff --cached --quiet && echo "[INFO] no changes to commit" && exit 0
 
-          git commit -m "update output (${{ inputs.mode }}) [skip ci]" || true
+          git commit -m "update output (${{ inputs.mode }}) [skip ci]"
 
-          # 競合回避（他のworkflowや手動pushがあっても潰れにくい）
-          git pull --rebase origin main || true
+          # ★rebaseしない（Actionsで事故りやすい）
+          # 他で更新が入ってたら取り込む（衝突してもpushだけは通しやすい）
+          git pull origin main || true
+
           git push origin main
