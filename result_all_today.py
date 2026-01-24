@@ -1,7 +1,9 @@
-# result_all_today.py  (fieldnote-lab-bot)
+# result_all_today.py  (fieldnote-lab-bot)  ✅最終版（まるごとコピペ）
 # 目的：
 # - keibablood（指数）+ kichiuma（SP）+ kaisekisya（騎手）で上位5頭を作る
-# - keiba.go.jp RaceMarkTable から結果(1-3着)＆三連複払戻(100円あたり)を取得（RefundMoneyListは使わない）
+# - keiba.go.jp から結果(1-3着)＆三連複払戻(100円あたり)を取得
+#   ★優先：RefundMoneyList（当日払戻金）→ レースごとに「三連複」だけを抽出（同着で複数行もOK）
+#   ★保険：RefundMoneyList が取れない/空のレースだけ RaceMarkTable から「式別=三連複」行をDOM抽出
 # - 注目レース（混戦度>=閾値）のみ三連複BOX(5頭=10点)の収支を計算
 # - output/ に結果HTML/JSON と pnl_total.json（トップページ表示用）を出力
 
@@ -26,11 +28,15 @@ KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
 KONSEN_FOCUS_TH  = float(os.environ.get("KONSEN_FOCUS_TH", "50"))
 KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
+
+# ===== デバッグ =====
 REFUND_DEBUG = os.environ.get("REFUND_DEBUG", "").strip() == "1"
+DEBUG = os.environ.get("DEBUG", "").strip() == "1"
 
 # ===== 注目レース：三連複BOX（上位5頭）=====
 BET_ENABLED = os.environ.get("BET_ENABLED", "1").strip() != "0"
 BET_UNIT = int(os.environ.get("BET_UNIT", "100"))  # 1点あたり（円）
+BET_BOX_N = int(os.environ.get("BET_BOX_N", "5"))  # 上位N頭BOX（デフォルト5→10点）
 
 # keiba.go.jp babaCode（開催判定用）※帯広除外
 BABA_CODE = {
@@ -469,12 +475,103 @@ def parse_top3_from_racemark(html_text: str):
             break
     return top
 
-# ====== NEW: RaceMarkTableから三連複払戻を抜く ======
-def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
+def build_racemark_url(baba: int, yyyymmdd: str, rno: int):
+    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
+    return (
+        "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
+        f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
+    )
+
+# ====== 払戻（RefundMoneyList） ======
+def refundmoney_url(baba: int, yyyymmdd: str) -> str:
+    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
+    return f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode={baba}&k_raceDate={date_slash}"
+
+def _parse_money_yen(s: str):
+    s = str(s)
+    m = re.search(r"([\d,]+)\s*円", s)
+    if not m:
+        return None
+    return int(m.group(1).replace(",", ""))
+
+def _norm_combo_str(s: str):
+    s = str(s).strip()
+    s = s.replace("－", "-").replace("―", "-").replace("—", "-")
+    s = re.sub(r"\s+", "", s)
+    return s
+
+def parse_refundmoney_sanrenpuku_by_race(html_text: str):
     """
-    RaceMarkTable 内の「三連複」払戻を拾う（列位置固定で誤爆を潰す版）
-    - tr を走査して「式別=三連複」の行を見つける
-    - そのセルより右側だけを材料に「組番」と「払戻(円)」を抽出する
+    return: dict[int, list[{"combo":(a,b,c),"payout":int}]]
+      race_no -> 三連複の行を全部（同着などで複数ある場合は複数）
+    """
+    soup = BeautifulSoup(html_text, "lxml")
+    txt = soup.get_text("\n", strip=True)
+    lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+
+    race_idx = []
+    for i, ln in enumerate(lines):
+        m = re.fullmatch(r"(\d{1,2})R", ln)
+        if m:
+            race_idx.append((int(m.group(1)), i))
+    if not race_idx:
+        for i, ln in enumerate(lines):
+            m = re.match(r"^(\d{1,2})R\b", ln)
+            if m:
+                race_idx.append((int(m.group(1)), i))
+
+    race_idx.sort(key=lambda x: x[1])
+
+    out = {}
+    for k, (rno, start) in enumerate(race_idx):
+        end = race_idx[k+1][1] if k+1 < len(race_idx) else len(lines)
+        seg = lines[start:end]
+
+        hits = []
+        for j in range(len(seg)):
+            if "三連複" not in seg[j]:
+                continue
+
+            ln = seg[j]
+            # 1行にまとまっているケース
+            combo_m = re.search(r"三連複\s*([0-9]+(?:[-－―—][0-9]+){2})", ln)
+            pay = _parse_money_yen(ln)
+            if combo_m and pay is not None:
+                combo_s = _norm_combo_str(combo_m.group(1))
+                nums = [int(x) for x in combo_s.split("-") if x.isdigit()]
+                if len(nums) == 3:
+                    hits.append({"combo": tuple(sorted(nums)), "payout": int(pay)})
+                continue
+
+            # 分割されてる時用
+            look = " ".join(seg[j:j+4])
+            combo_m = re.search(r"三連複\s*([0-9]+(?:[-－―—][0-9]+){2})", look)
+            pay = _parse_money_yen(look)
+            if combo_m and pay is not None:
+                combo_s = _norm_combo_str(combo_m.group(1))
+                nums = [int(x) for x in combo_s.split("-") if x.isdigit()]
+                if len(nums) == 3:
+                    hits.append({"combo": tuple(sorted(nums)), "payout": int(pay)})
+
+        if hits:
+            # 重複除去
+            seen = set()
+            uniq = []
+            for h in hits:
+                key = (h["combo"], h["payout"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                uniq.append(h)
+            out[int(rno)] = uniq
+
+    return out
+
+# ====== 保険：RaceMarkTableから「式別=三連複」行をDOM抽出 ======
+def parse_sanrenpuku_refunds_from_racemark_dom(html_text: str):
+    """
+    RaceMarkTable 内の払戻表をDOMで走査して「三連複」行だけ抽出する
+    return: list[{"combo":(a,b,c), "payout":int}]
     """
     if not html_text:
         return []
@@ -484,13 +581,11 @@ def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
     seen = set()
 
     for tr in soup.find_all("tr"):
-        cells = tr.find_all(["th", "td"])
-        if not cells:
+        tds = tr.find_all(["th", "td"])
+        if not tds:
             continue
-
-        texts = [c.get_text(" ", strip=True) for c in cells]
-
-        # 1) 「三連複」を含むセル位置を探す（式別セル）
+        texts = [td.get_text(" ", strip=True) for td in tds]
+        # 行のどこかに「三連複」
         idx_type = None
         for i, t in enumerate(texts):
             if "三連複" in re.sub(r"\s+", "", t):
@@ -499,92 +594,95 @@ def parse_sanrenpuku_refunds_from_racemark(html_text: str, rno: int = None):
         if idx_type is None:
             continue
 
-        # 2) 以降（右側）だけを見る（誤爆しやすい左側の数字は捨てる）
-        right_texts = texts[idx_type+1:] if idx_type+1 < len(texts) else []
-        if not right_texts:
+        right = texts[idx_type+1:] if idx_type+1 < len(texts) else []
+        if not right:
             continue
 
-        # 3) 組番（1-2-3）を右側から探す
+        # combo
         combo = None
-        for t in right_texts:
-            nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", t)]
-            nums = [n for n in nums if 1 <= n <= 18]
-            if len(nums) >= 3:
-                a, b, c = sorted(nums[:3])
-                if len({a, b, c}) == 3:
-                    combo = (a, b, c)
+        for t in right:
+            # 7-8-10 的な記法優先
+            m = re.search(r"(\d{1,2})\s*[-－―—]\s*(\d{1,2})\s*[-－―—]\s*(\d{1,2})", t)
+            if m:
+                a, b, c = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                if 1 <= a <= 18 and 1 <= b <= 18 and 1 <= c <= 18 and len({a,b,c}) == 3:
+                    combo = tuple(sorted((a,b,c)))
                     break
+
+        if combo is None:
+            # 3つの馬番が同セルにいるパターン保険
+            for t in right:
+                nums = [int(x) for x in re.findall(r"\b\d{1,2}\b", t)]
+                nums = [n for n in nums if 1 <= n <= 18]
+                if len(nums) >= 3:
+                    a, b, c = nums[0], nums[1], nums[2]
+                    if len({a,b,c}) == 3:
+                        combo = tuple(sorted((a,b,c)))
+                        break
         if combo is None:
             continue
 
-        # 4) 払戻（円）を右側から探す（「円」が付いてるセルを優先）
+        # payout
         payout = None
-
-        # (a) "xxxx円" を優先
-        for t in right_texts:
+        for t in right:
             m = re.search(r"(\d[\d,]{2,})\s*円", t)
             if m:
                 payout = int(m.group(1).replace(",", ""))
                 break
-
-        # (b) 円が無い場合の保険（最後の方の大きい数字を拾う）
         if payout is None:
-            for t in reversed(right_texts):
+            for t in reversed(right):
                 m = re.search(r"\b(\d[\d,]{2,})\b", t)
                 if m:
                     v = int(m.group(1).replace(",", ""))
                     if v >= 100:
                         payout = v
                         break
-
         if payout is None:
             continue
 
-        # 5) 異常値フィルタ（誤爆防止）
-        # 三連複100円は普通 100〜数十万程度。200万/500万はほぼ誤爆なので捨てる。
-        if payout > 500000:
+        key = (combo, payout)
+        if key in seen:
             continue
-
-        if combo in seen:
-            continue
-        seen.add(combo)
+        seen.add(key)
 
         out.append({"combo": combo, "payout": int(payout)})
 
-        if REFUND_DEBUG and out:
-            print("[REFUND_DEBUG] sanrenpuku_rows=", out[:3])
-  
     return out
 
-# ====== 三連複BOX(5頭=10点) 計算 ======
-def calc_trifecta_box_invest(unit: int) -> int:
-    return int(unit) * 10  # 5頭BOX -> C(5,3)=10点
-
-def calc_payout_for_box(hit_combo_list, refunds, unit: int) -> int:
-    if not hit_combo_list or not refunds:
+# ====== 三連複BOX（上位N頭） ======
+def comb3_count(n: int) -> int:
+    if n < 3:
         return 0
-    hit_sets = {frozenset(c) for c in hit_combo_list}
+    return (n * (n - 1) * (n - 2)) // 6
+
+def calc_box_invest(unit: int, nbox: int) -> int:
+    return int(unit) * int(comb3_count(nbox))
+
+def calc_payout_for_box(top_umaban_list, refunds, unit: int) -> int:
+    """
+    top_umaban_list: BOX対象の馬番（上位N頭）
+    refunds: [{"combo":(a,b,c),"payout":100円払戻}, ...]  同着は複数行→全部加算
+    unit: 1点あたり（円）
+    """
+    if not top_umaban_list or not refunds:
+        return 0
+
+    box_set = set(int(x) for x in top_umaban_list)
     total = 0
+
     for rf in refunds:
         combo = rf.get("combo")
         if not combo or len(combo) != 3:
             continue
-        if frozenset(combo) in hit_sets:
-            payout100 = int(rf.get("payout", 0))
+        a, b, c = int(combo[0]), int(combo[1]), int(combo[2])
+        if (a in box_set) and (b in box_set) and (c in box_set):
+            payout100 = int(rf.get("payout", 0) or 0)
             total += int(payout100 * (unit / 100))
+
     return int(total)
 
-def build_racemark_url(baba: int, yyyymmdd: str, rno: int):
-    date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
-    return (
-        "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
-        f"?k_babaCode={baba}&k_raceDate={date_slash}&k_raceNo={int(rno)}"
-    )
-
-# ===== HTML（※ここはあなたの既存renderをそのまま使いたいなら置換してOK）=====
+# ===== HTML（動作優先の簡易版：必要ならあなたの既存renderに差し替えてOK）=====
 def render_result_html(title: str, races_out) -> str:
-    # 省略：あなたの既存render_result_htmlをここに貼ってOK
-    # 今回は「動作優先」でシンプルに
     import html as _html
     def esc(s): return _html.escape(str(s))
 
@@ -602,7 +700,7 @@ def render_result_html(title: str, races_out) -> str:
 
 def main():
     yyyymmdd = os.environ.get("DATE") or datetime.now().strftime("%Y%m%d")
-    debug = os.environ.get("DEBUG", "").strip() == "1"
+    debug = DEBUG
 
     outdir = Path("output")
     outdir.mkdir(parents=True, exist_ok=True)
@@ -612,7 +710,7 @@ def main():
     print(f"[INFO] DATE={yyyymmdd}")
     print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
     print(f"[INFO] KONSEN name={KONSEN_NAME} gap12_mid={KONSEN_GAP12_MID} gap15_mid={KONSEN_GAP15_MID} focus_th={KONSEN_FOCUS_TH}")
-    print(f"[INFO] BET enabled={BET_ENABLED} unit={BET_UNIT}")
+    print(f"[INFO] BET enabled={BET_ENABLED} unit={BET_UNIT} box_n={BET_BOX_N}")
 
     active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
@@ -641,9 +739,11 @@ def main():
             print(f"[SKIP] {track}: code missing")
             continue
 
+        # --- 騎手成績 ---
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
         jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
 
+        # --- keibablood（-2優先で探索） ---
         picked_url = None
         used_series = None
         kb_races = None
@@ -663,6 +763,13 @@ def main():
         if not kb_races:
             print(f"[SKIP] {track}: keibablood 未発見")
             continue
+
+        # --- 払戻（RefundMoneyList）を先に丸ごと取る（レースごとに map 化） ---
+        ref_url = refundmoney_url(baba, yyyymmdd)
+        ref_html = fetch(ref_url, debug=debug)
+        sanrenpuku_map = parse_refundmoney_sanrenpuku_by_race(ref_html) if ref_html else {}
+        if REFUND_DEBUG:
+            print(f"[REFUND_DEBUG] {track} refundmoney_url={ref_url} races_with_sanrenpuku={len(sanrenpuku_map)}")
 
         races_out = []
         track_incomplete = False
@@ -731,6 +838,9 @@ def main():
             top5_scores = [float(h["score"]) for h in top5]
             konsen = calc_konsen_gap(top5_scores)
 
+            if KONSEN_DEBUG:
+                print(f"[KONSEN] {track} {rno}R top5_scores={[round(v,2) for v in top5_scores]} konsen={konsen}")
+
             # 予想上位5
             pred_top5 = []
             top5_umaban = []
@@ -747,47 +857,46 @@ def main():
                 })
                 top5_umaban.append(int(hh["umaban"]))
 
-            # keiba.go.jp 結果＆払戻（RaceMarkTable）
+            # keiba.go.jp 結果（RaceMarkTable）
             rm_url = build_racemark_url(baba, yyyymmdd, rno)
             rm_html = fetch(rm_url, debug=debug)
             result_top3 = parse_top3_from_racemark(rm_html) if rm_html else []
-            refunds = parse_sanrenpuku_refunds_from_racemark(rm_html) if rm_html else []
+
+            # 払戻：まず RefundMoneyList の map を使う
+            refunds = sanrenpuku_map.get(int(rno), [])
+
+            # 取れないレースだけ保険で RaceMarkTable DOM抽出
+            if (not refunds) and rm_html:
+                refunds = parse_sanrenpuku_refunds_from_racemark_dom(rm_html)
 
             if REFUND_DEBUG:
                 print(f"[REFUND_DEBUG] {track} {rno}R racemark_url={rm_url}")
-                print(f"[REFUND_DEBUG] {track} {rno}R racemark_has_sanrenpuku={'三連複' in (rm_html or '')}")
                 print(f"[REFUND_DEBUG] {track} {rno}R refunds_found={len(refunds)} refunds={refunds[:5]}")
+                if not refunds:
+                    print(f"[REFUND_DEBUG] {track} {rno}R NOTE=refunds empty (refundmoney+racemark fallback)")
 
             bet = {
                 "enabled": bool(BET_ENABLED),
                 "unit": int(BET_UNIT),
+                "box_n": int(BET_BOX_N),
                 "is_focus": bool(konsen.get("is_focus", False)),
-                "box_umaban": sorted(top5_umaban),
+                "box_umaban": sorted(top5_umaban[:min(BET_BOX_N, len(top5_umaban))]),
                 "invest": 0,
                 "payout": 0,
                 "profit": 0,
                 "hits": 0,
                 "refunds_found": int(len(refunds)),
+                "refundmoney_url": ref_url,
                 "racemark_url": rm_url,
             }
 
             if BET_ENABLED and bet["is_focus"]:
-                inv = calc_trifecta_box_invest(BET_UNIT)
-                bet["invest"] = inv
+                nbox = min(BET_BOX_N, len(top5_umaban))
+                inv = calc_box_invest(BET_UNIT, nbox)
+                bet["invest"] = int(inv)
 
-                hit_combo_list = []
-                if len(result_top3) >= 3:
-                    a, b, c = sorted([
-                        int(result_top3[0]["umaban"]),
-                        int(result_top3[1]["umaban"]),
-                        int(result_top3[2]["umaban"]),
-                    ])
-                    combo = (a, b, c)
-                    box_set = set(top5_umaban)
-                    if (a in box_set) and (b in box_set) and (c in box_set):
-                        hit_combo_list = [combo]
-
-                pay = calc_payout_for_box(hit_combo_list, refunds, BET_UNIT)
+                # 同着で複数三連複があれば refunds 側に複数行入るので、全部加算される
+                pay = calc_payout_for_box(top5_umaban[:nbox], refunds, BET_UNIT)
 
                 bet["payout"] = int(pay)
                 bet["profit"] = int(pay - inv)
@@ -795,7 +904,7 @@ def main():
 
                 pnl_total["races"] += 1
                 pnl_total["hits"] += bet["hits"]
-                pnl_total["invest"] += inv
+                pnl_total["invest"] += int(inv)
                 pnl_total["payout"] += int(pay)
 
             races_out.append({
@@ -810,6 +919,7 @@ def main():
                     "keibablood_url": picked_url,
                     "keibablood_series": used_series,
                     "keiba_go_racemark_url": rm_url,
+                    "keiba_go_refundmoney_url": ref_url,
                     "kichiuma_fp_url": fp_url,
                 },
                 "bet": bet,
