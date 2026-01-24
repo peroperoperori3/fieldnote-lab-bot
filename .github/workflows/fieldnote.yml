@@ -62,6 +62,20 @@ jobs:
           rm -f output/result_*.json  output/result_*.html  || true
           echo "[INFO] cleaned predict/result outputs, kept output/pnl_total.json (if any)"
 
+      # ✅ 90日より古い output を削除（pnl_total.json は残す）
+      - name: Prune output older than 90 days
+        shell: bash
+        run: |
+          mkdir -p output
+
+          # macOS互換は不要（ubuntuなのでfind -mtimeが使える）
+          # 90日より古い predict/result の json/html を削除
+          find output -type f \
+            \( -name "predict_*.json" -o -name "predict_*.html" -o -name "result_*.json" -o -name "result_*.html" \) \
+            -mtime +90 -print -delete || true
+
+          echo "[INFO] prune done (older than 90 days)"
+
       # ===== predict =====
       - name: Run predict (try)
         if: ${{ inputs.mode == 'predict' }}
@@ -127,9 +141,7 @@ jobs:
           # 変更がないなら何もしない
           git diff --cached --quiet && echo "[INFO] no changes to commit" && exit 0
 
-          git commit -m "update output (${{
-            inputs.mode
-          }}) [skip ci]" || true
+          git commit -m "update output (${{ inputs.mode }}) [skip ci]" || true
 
           # 競合回避（他のworkflowや手動pushがあっても潰れにくい）
           git pull --rebase origin main || true
