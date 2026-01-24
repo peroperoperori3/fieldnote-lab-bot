@@ -125,8 +125,12 @@ def main():
         place_code = data.get("place_code") or data.get("track_code") or ""
 
         html_path = json_path.replace(".json", ".html")
-        with open(html_path, encoding="utf-8") as f:
-            html = f.read()
+        try:
+            with open(html_path, encoding="utf-8") as f:
+                html = f.read()
+        except FileNotFoundError:
+            print(f"[SKIP] html not found: {html_path} (jsonだけあるので投稿せずスキップ)")
+            continue
 
         # 1日1場1記事で固定（slug重複しないように track_slug を必ず入れる）
         track_slug = safe_track_slug(place, place_code)
