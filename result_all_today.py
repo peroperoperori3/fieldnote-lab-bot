@@ -775,7 +775,6 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
 
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
-    parts.append(f"<div style='font-size:20px;font-weight:900;margin:10px 0 6px;color:#111827;'>{esc(title)}</div>")
 
     # ===== 収支サマリ =====
     if pnl_summary:
