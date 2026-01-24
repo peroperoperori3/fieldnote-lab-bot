@@ -52,24 +52,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml python-dotenv
 
-      # ✅ output を丸ごと消さない（pnl_total.json を固定化してしまうため）
-      #    代わりに「当日の生成物だけ」消す（pnl_total.json は残す）
-      - name: Clean output (keep pnl_total.json)
+      # ✅ output は履歴として残す（predict/result を消さない）
+      - name: Ensure output dir (do NOT delete history)
         shell: bash
         run: |
           mkdir -p output
-          rm -f output/predict_*.json output/predict_*.html || true
-          rm -f output/result_*.json  output/result_*.html  || true
-          echo "[INFO] cleaned predict/result outputs, kept output/pnl_total.json (if any)"
+          echo "[INFO] keep all history files in output/ (predict/result), only prune by age"
 
       # ✅ 90日より古い output を削除（pnl_total.json は残す）
       - name: Prune output older than 90 days
         shell: bash
         run: |
           mkdir -p output
+
+          # 90日より古い predict/result の json/html を削除
           find output -type f \
             \( -name "predict_*.json" -o -name "predict_*.html" -o -name "result_*.json" -o -name "result_*.html" \) \
             -mtime +90 -print -delete || true
+
           echo "[INFO] prune done (older than 90 days)"
 
       # ===== predict =====
@@ -120,29 +120,27 @@ jobs:
         run: |
           MODE=result python wp_post.py
 
-      # ✅ 最重要：削除も含めて output を確実に GitHub に反映する（rebaseしない）
+      # ✅ ここが最重要：output/pnl_total.json を含め output を GitHub に反映する
       - name: Commit & push output
         if: ${{ always() }}
         shell: bash
         run: |
-          set -e
-
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          # ★ここが肝：削除も含める
-          git add -A output/
+          # output 配下の生成物を全部コミット対象に（pnl_total.json も含む）
+          git add output/* || true
 
           echo "[INFO] git status:"
           git status
 
-          # 変更がないなら終了
+          # 変更がないなら何もしない
           git diff --cached --quiet && echo "[INFO] no changes to commit" && exit 0
 
-          git commit -m "update output (${{ inputs.mode }}) [skip ci]"
+          git commit -m "update output (${{ inputs.mode }}) [skip ci]" || true
 
-          # ★rebaseしない（Actionsで事故りやすい）
-          # 他で更新が入ってたら取り込む（衝突してもpushだけは通しやすい）
-          git pull origin main || true
+          # 競合回避（pull/rebase の前に working tree を綺麗にする）
+          git reset --hard
+          git pull --rebase origin main || true
 
           git push origin main
