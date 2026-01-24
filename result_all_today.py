@@ -1052,6 +1052,17 @@ def main():
             top5_scores = [float(h["score"]) for h in top5]
             konsen = calc_konsen_gap(top5_scores)
 
+          # ===== デバッグ：混戦度の中身を見る =====
+            if KONSEN_DEBUG:
+                 print(
+                   f"[KONSEN] {track} {rno}R "
+                   f"value={konsen.get('value')} "
+                   f"focus={konsen.get('is_focus')} "
+                   f"gap12={konsen.get('gap12')} "
+                   f"gap15={konsen.get('gap15')} "
+                   f"top5_scores={[round(x,2) for x in top5_scores]}"
+                  )
+          
             if KONSEN_DEBUG:
                 print(f"[KONSEN] {track} {rno}R top5_scores={list(map(lambda v: round(v,2), top5_scores))} konsen={konsen}")
 
