@@ -78,17 +78,19 @@ jobs:
         run: |
           python predict_all_today.py || true
 
-      - name: Check predict outputs
+      # ✅ 重要：当日DATEのファイルだけを検出（履歴が残ってても誤爆しない）
+      - name: Check predict outputs (DATE filtered)
         id: chk_predict
         if: ${{ inputs.mode == 'predict' }}
         shell: bash
         run: |
-          if ls output/predict_*.json >/dev/null 2>&1; then
+          echo "[DEBUG] DATE=$DATE"
+          if ls "output/predict_${DATE}_"*.json >/dev/null 2>&1; then
             echo "HAS=1" >> $GITHUB_OUTPUT
-            echo "found predict json"
+            echo "found predict json for DATE=$DATE"
           else
             echo "HAS=0" >> $GITHUB_OUTPUT
-            echo "no predict json yet (skip post)"
+            echo "no predict json for DATE=$DATE (skip post)"
           fi
 
       - name: Post predict to WordPress
@@ -102,17 +104,19 @@ jobs:
         run: |
           REFUND_DEBUG=1 python result_all_today.py || true
 
-      - name: Check result outputs
+      # ✅ 重要：当日DATEのファイルだけを検出（履歴が残ってても誤爆しない）
+      - name: Check result outputs (DATE filtered)
         id: chk_result
         if: ${{ inputs.mode == 'result' }}
         shell: bash
         run: |
-          if ls output/result_*.json >/dev/null 2>&1; then
+          echo "[DEBUG] DATE=$DATE"
+          if ls "output/result_${DATE}_"*.json >/dev/null 2>&1; then
             echo "HAS=1" >> $GITHUB_OUTPUT
-            echo "found result json"
+            echo "found result json for DATE=$DATE"
           else
             echo "HAS=0" >> $GITHUB_OUTPUT
-            echo "no result json yet (skip post)"
+            echo "no result json for DATE=$DATE (skip post)"
           fi
 
       - name: Post result to WordPress
@@ -120,13 +124,16 @@ jobs:
         run: |
           MODE=result python wp_post.py
 
-      # ✅ ここが最重要：output/pnl_total.json を含め output を GitHub に反映する
+      # ✅ output/pnl_total.json を含め output を GitHub に反映する
       - name: Commit & push output
         if: ${{ always() }}
         shell: bash
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+
+          # 念のため最新に追従（競合しやすいなら先にpull）
+          git pull --rebase origin main || true
 
           # output 配下の生成物を全部コミット対象に（pnl_total.json も含む）
           git add output/* || true
@@ -138,9 +145,4 @@ jobs:
           git diff --cached --quiet && echo "[INFO] no changes to commit" && exit 0
 
           git commit -m "update output (${{ inputs.mode }}) [skip ci]" || true
-
-          # 競合回避（pull/rebase の前に working tree を綺麗にする）
-          git reset --hard
-          git pull --rebase origin main || true
-
           git push origin main
