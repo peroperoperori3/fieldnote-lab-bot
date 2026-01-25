@@ -110,9 +110,16 @@ def main():
         category_name = "競馬結果"
         mode_label = "結果"
 
-    files = sorted(glob.glob(f"output/{prefix}*.json"))
+    # ==========================
+    # ★修正点：DATEが指定されている場合は、その日付のファイルだけ投稿する
+    # ==========================
+    DATE = re.sub(r"\D", "", os.environ.get("DATE", "").strip())
+    pattern = f"output/{prefix}{DATE}_*.json" if DATE else f"output/{prefix}*.json"
+    files = sorted(glob.glob(pattern))
+    print(f"[DEBUG] DATE={DATE!r} pattern={pattern}")
+
     if not files:
-        print(f"[SKIP] output に {prefix}*.json が見つかりません（まだデータが出てないので終了）")
+        print(f"[SKIP] output に {pattern} が見つかりません（まだデータが出てないので終了）")
         return
 
     print(f"[DEBUG] files = {files}")
