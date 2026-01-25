@@ -43,6 +43,12 @@ def load_pnl_total(path: str):
             "invest": 0, "payout": 0, "profit": 0,
             "races": 0, "hits": 0,
             "last_updated": None,
+
+            # ★追加：全体予想（上位5で1-3着）累計
+            "pred_races": 0,
+            "pred_hits": 0,
+            "pred_hit_rate": None,
+            "pred_by_place": {},  # { "船橋": {"races":..,"hits":..,"hit_rate":..}, ... }
         }
     try:
         d = json.loads(p.read_text(encoding="utf-8"))
@@ -54,12 +60,27 @@ def load_pnl_total(path: str):
         d.setdefault("races", 0)
         d.setdefault("hits", 0)
         d.setdefault("last_updated", None)
+
+        # ★追加キー（既存ファイル互換）
+        d.setdefault("pred_races", 0)
+        d.setdefault("pred_hits", 0)
+        d.setdefault("pred_hit_rate", None)
+        d.setdefault("pred_by_place", {})
+
+        if not isinstance(d.get("pred_by_place"), dict):
+            d["pred_by_place"] = {}
+
         return d
     except Exception:
         return {
             "invest": 0, "payout": 0, "profit": 0,
             "races": 0, "hits": 0,
             "last_updated": None,
+
+            "pred_races": 0,
+            "pred_hits": 0,
+            "pred_hit_rate": None,
+            "pred_by_place": {},
         }
 
 def save_pnl_total(path: str, total: dict):
@@ -341,6 +362,31 @@ def parse_top3_from_racemark(html_text: str):
     return top
 
 
+# =========================
+# ★追加：全体的中判定（上位5に1-3着が全部入ってたら的中）
+# =========================
+def is_pred_hit(pred_top5, result_top3) -> bool:
+    if not pred_top5 or not result_top3:
+        return False
+    if len(result_top3) < 3:
+        return False
+    s5 = set()
+    for p in pred_top5[:5]:
+        try:
+            s5.add(int(p.get("umaban")))
+        except Exception:
+            pass
+    if len(s5) == 0:
+        return False
+    top3_nums = []
+    for x in result_top3[:3]:
+        try:
+            top3_nums.append(int(x.get("umaban")))
+        except Exception:
+            return False
+    return set(top3_nums).issubset(s5)
+
+
 # ====== 払戻（RefundMoneyList）から「三連複」の組合せと払戻を拾う（同着で複数行もOK） ======
 def refundmoney_url(baba: int, yyyymmdd: str) -> str:
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
@@ -617,6 +663,10 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
             else:
                 konsen_badge = badge(f"{kname}{float(kval):.1f}", "#6b7280", "#ffffff")
 
+        # ★追加：全体的中バッジ（上位5で1-3着）
+        pred_hit = bool(r.get("pred_hit", False))
+        pred_hit_badge = badge(("的中" if pred_hit else "不的中"), "#10b981" if pred_hit else "#6b7280", "#ffffff")
+
         parts.append(
             "<div style='margin:16px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
@@ -626,7 +676,7 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
         parts.append(
             "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;'>"
             f"<div style='font-size:18px;font-weight:900;color:#111827;'>{esc(head)}</div>"
-            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{konsen_badge}</div>"
+            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{konsen_badge}{pred_hit_badge}</div>"
             "</div>"
         )
 
@@ -777,6 +827,10 @@ def main():
         payout_sum = 0
         hits_sum = 0
 
+        # ★追加：開催場ごとの全体的中（当日分の集計）
+        track_pred_races = 0
+        track_pred_hits = 0
+
         # ★地方は最大12R想定（predictにあるレースだけ処理）
         for rno in range(1, 13):
             pr = pred_map.get(int(rno))
@@ -808,11 +862,11 @@ def main():
                 print(f"[REFUND_DEBUG] {track} {rno}R racemark_url={rm_url}")
                 print(f"[REFUND_DEBUG] {track} {rno}R refunds_found={len(san)} refunds={san[:5]}")
 
-            # ★修正：レースごと欠損でも「スキップ」ではなく「結果なし」で載せたいならこのまま。
-            # ただし、完全にページが壊れている/レース自体が存在しないケースは“載せない”方がよければ下をONに。
-            # if not rm_html:
-            #     print(f"[SKIP] {track} {rno}R: RaceMarkTable not found -> skip race")
-            #     continue
+            # ★追加：全体的中判定（結果が取れてる時だけ累計）
+            pred_hit = is_pred_hit(pred_top5, result_top3)
+            if result_top3 and len(result_top3) >= 3:
+                track_pred_races += 1
+                track_pred_hits += (1 if pred_hit else 0)
 
             # ---- 注目レースの三連複BOX収支（同着で複数三連複があれば全部加算）----
             bet_box = {"is_focus": False}
@@ -857,6 +911,10 @@ def main():
                 "konsen": konsen,
                 "pred_top5": pred_top5,
                 "result_top3": result_top3,
+
+                # ★追加：全体的中バッジ用フラグ
+                "pred_hit": bool(pred_hit),
+
                 "bet_box": bet_box,
                 "source": {
                     "predict_json": pred_path,
@@ -870,6 +928,25 @@ def main():
         if not races_out:
             print(f"[SKIP] {track}: no races built (maybe predict json empty)")
             continue
+
+        # ★追加：開催場ごとの全体的中を累計に反映（結果が取れてるレースのみ）
+        if track_pred_races > 0:
+            pnl_total["pred_races"] = int(pnl_total.get("pred_races", 0) or 0) + int(track_pred_races)
+            pnl_total["pred_hits"]  = int(pnl_total.get("pred_hits", 0) or 0) + int(track_pred_hits)
+
+            byp = pnl_total.get("pred_by_place", {})
+            if not isinstance(byp, dict):
+                byp = {}
+            rec = byp.get(track, {})
+            if not isinstance(rec, dict):
+                rec = {}
+            rec["races"] = int(rec.get("races", 0) or 0) + int(track_pred_races)
+            rec["hits"]  = int(rec.get("hits", 0) or 0) + int(track_pred_hits)
+            rrr = int(rec.get("races", 0) or 0)
+            hhh = int(rec.get("hits", 0) or 0)
+            rec["hit_rate"] = round((hhh / rrr) * 100.0, 1) if rrr > 0 else None
+            byp[track] = rec
+            pnl_total["pred_by_place"] = byp
 
         title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 結果"
 
@@ -919,6 +996,12 @@ def main():
     pnl_total["profit"] = int(payout - invest)
     pnl_total["roi"] = round((payout / invest) * 100.0, 1) if invest > 0 else None
     pnl_total["hit_rate"] = round((hits / races) * 100.0, 1) if races > 0 else None
+
+    # ★追加：全体予想（上位5で1-3着）累計の率
+    pr = int(pnl_total.get("pred_races", 0) or 0)
+    ph = int(pnl_total.get("pred_hits", 0) or 0)
+    pnl_total["pred_hit_rate"] = round((ph / pr) * 100.0, 1) if pr > 0 else None
+
     pnl_total["last_updated"] = datetime.now().isoformat(timespec="seconds")
 
     save_pnl_total(PNL_FILE, pnl_total)
