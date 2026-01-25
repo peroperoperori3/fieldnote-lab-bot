@@ -853,27 +853,37 @@ def main():
         track_incomplete = False
 
         # レース数は最大12想定で「取れたレースだけ採用」
+        nar_missing_streak = 0  # 連続でNARが取れない=開催終了っぽい判定に使う
+
         for rno in range(1, 13):
             # ---- NAR 平均指数（base_index）----
             nar_rows, used_cond, nar_src, race_name_from_nar = fetch_nar_rows_best(yyyymmdd, track_id, rno, debug=False)
 
-            # 1Rから何も取れない場は“その場NG”
+            # ★修正：欠損レースは「データ不足」でスキップし、次のレースへ（1Rだけは場まるごとNG）
             if not nar_rows:
                 if rno == 1:
                     print(f"[SKIP] {track}: NAR rows not found (rno=1) -> NO OUTPUT")
                     track_incomplete = True
-                else:
+                    break
+                nar_missing_streak += 1
+                print(f"[SKIP] {track} {rno}R: データ不足（NAR指数なし） -> skip race")
+                # 連続で取れないなら開催終了っぽいので終了
+                if nar_missing_streak >= 2:
                     if debug:
-                        print(f"[INFO] {track}: stop at {rno}R (no nar rows)")
-                break
+                        print(f"[INFO] {track}: stop at {rno}R (NAR missing streak={nar_missing_streak})")
+                    break
+                continue
+            else:
+                nar_missing_streak = 0
 
             # ---- 吉馬 SP ----
             fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
             fp_html = fetch(fp_url, debug=False)
+
+            # ★修正：吉馬が取れない場合も「レーススキップ」（場まるごと中断しない）
             if not fp_html:
-                print(f"[SKIP] {track} {rno}R: kichiuma fetch failed -> skip track")
-                track_incomplete = True
-                break
+                print(f"[SKIP] {track} {rno}R: データ不足（吉馬SP取得失敗） -> skip race")
+                continue
 
             sp_by_umaban, race_name_kichiuma = parse_kichiuma_sp(fp_html)
 
@@ -882,11 +892,15 @@ def main():
             if not race_name:
                 race_name = clean_race_name(race_name_from_nar) if race_name_from_nar else ""
 
-            # rows を “共通フォーマット” に
+            # rows を “共通フォーマット” に（avg_index欠損の馬は除外）
             rows = []
             for h in nar_rows:
-                u = int(h["umaban"])
-                base = float(h["avg_index"])   # NAR平均指数を base_index として採用
+                try:
+                    u = int(h.get("umaban"))
+                    base = float(h.get("avg_index"))   # NAR平均指数を base_index として採用
+                except Exception:
+                    continue
+
                 j = h.get("jockey", "") or ""
 
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
@@ -896,17 +910,17 @@ def main():
 
                 rows.append({
                     "umaban": u,
-                    "name": clean_horse_name(h["name"]),
+                    "name": clean_horse_name(h.get("name", "")),
                     "jockey": j,
                     "base_index": base,
                     "jockey_add": float(add),
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
+            # ★修正：有効データ不足のレースはスキップ
             if len(rows) < 5:
-                print(f"[SKIP] {track} {rno}R: rows < 5 -> skip track")
-                track_incomplete = True
-                break
+                print(f"[SKIP] {track} {rno}R: データ不足（有効馬<5） -> skip race")
+                continue
 
             est_sp, _ = estimate_sp_factory(rows, debug=False)
 
@@ -938,10 +952,10 @@ def main():
                     },
                 })
 
+            # ★修正：採点できた馬が少ないレースもスキップ
             if len(horses_scored) < 5:
-                print(f"[SKIP] {track} {rno}R: horses < 5 -> skip track")
-                track_incomplete = True
-                break
+                print(f"[SKIP] {track} {rno}R: データ不足（採点馬<5） -> skip race")
+                continue
 
             horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
             top5 = horses_scored[:5]
