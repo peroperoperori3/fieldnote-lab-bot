@@ -131,6 +131,73 @@ def _find_predict_json(yyyymmdd: str, baba: int, place_code: str):
     return cand[0] if cand else None
 
 def _norm_pred_races(pred_json: dict):
+    """predict JSON を result 用に正規化する。
+    対応フォーマット：
+      - newer: { predictions: [ {race_no, race_name, picks:[...], konsen:{...}} ] }
+      - older: { races: [ {race_no, race_name, pred_top5:[...], konsen:{...}} ] }
+    """
+    # --- 新フォーマット（あなたの実データ）---
+    preds = pred_json.get("predictions")
+    if isinstance(preds, list):
+        out = []
+        for r in preds:
+            if not isinstance(r, dict):
+                continue
+            rno = r.get("race_no")
+            try:
+                rno = int(rno)
+            except Exception:
+                continue
+
+            race_name = r.get("race_name") or r.get("name") or ""
+            konsen = r.get("konsen") if isinstance(r.get("konsen"), dict) else {}
+
+            picks = r.get("picks") or []
+            if not isinstance(picks, list):
+                picks = []
+
+            pred_top5 = []
+            for i, p in enumerate(picks[:5]):
+                if not isinstance(p, dict):
+                    continue
+                umaban = p.get("umaban") or p.get("umaban_no") or p.get("horse_no") or p.get("num")
+                try:
+                    umaban = int(umaban)
+                except Exception:
+                    continue
+
+                name = p.get("name") or p.get("horse_name") or ""
+                score = p.get("score")
+                try:
+                    score = float(score)
+                except Exception:
+                    continue
+
+                mark = p.get("mark") or (MARKS5[i] if i < len(MARKS5) else "—")
+
+                pred_top5.append({
+                    "mark": str(mark),
+                    "umaban": int(umaban),
+                    "name": str(name),
+                    "score": float(score),
+                    # 互換：predictが持ってるなら残す
+                    "sp": p.get("sp"),
+                    "base_index": p.get("base_index"),
+                    "jockey": p.get("jockey", ""),
+                    "jockey_add": p.get("jockey_add", 0.0),
+                    "source": p.get("source", {}),
+                })
+
+            if pred_top5:
+                out.append({
+                    "race_no": rno,
+                    "race_name": str(race_name or ""),
+                    "pred_top5": pred_top5,
+                    "konsen": konsen,
+                })
+        return out
+
+    # --- 旧フォーマット ---
     races = pred_json.get("races") or pred_json.get("RACES") or []
     if not isinstance(races, list):
         return []
@@ -144,7 +211,6 @@ def _norm_pred_races(pred_json: dict):
         except Exception:
             continue
 
-        # 予想上位5
         top5 = r.get("pred_top5") or r.get("top5") or r.get("predict_top5") or []
         if not isinstance(top5, list):
             top5 = []
@@ -163,17 +229,14 @@ def _norm_pred_races(pred_json: dict):
             try:
                 score = float(score)
             except Exception:
-                score = None
+                continue
 
             mark = p.get("mark") or (MARKS5[i] if i < len(MARKS5) else "—")
-            if score is None:
-                continue
             pred_top5.append({
                 "mark": mark,
                 "umaban": int(umaban),
                 "name": str(name),
                 "score": float(score),
-                # 互換：predictが持ってるなら残す
                 "sp": p.get("sp"),
                 "base_index": p.get("base_index"),
                 "jockey": p.get("jockey", ""),
@@ -181,23 +244,26 @@ def _norm_pred_races(pred_json: dict):
                 "source": p.get("source", {}),
             })
 
-        # 混戦度（predictの値をそのまま）
-        konsen = r.get("konsen") or {}
-        if not isinstance(konsen, dict):
-            konsen = {}
-
+        konsen = r.get("konsen") if isinstance(r.get("konsen"), dict) else {}
         race_name = r.get("race_name") or r.get("name") or ""
-
-        out.append({
-            "race_no": rno,
-            "race_name": str(race_name or ""),
-            "pred_top5": pred_top5,
-            "konsen": konsen,
-        })
+        if pred_top5:
+            out.append({
+                "race_no": rno,
+                "race_name": str(race_name or ""),
+                "pred_top5": pred_top5,
+                "konsen": konsen,
+            })
     return out
 
-def load_predict_for_track(yyyymmdd: str, baba: int, place_code: str):
-    path = _find_predict_json(yyyymmdd, baba, place_code)
+def load_predict_for_track(yyyymmdd: str, place_code: str, alt_code: str | None = None):
+    """predict JSON を読み込んで race_no -> dict を返す。
+    place_code は従来の出力コード（例: 43）、
+    alt_code は trackコード/ババコード系（例: 19）など、別名出力の保険。
+    """
+    path = _find_predict_json(yyyymmdd, place_code)
+    if (not path) and alt_code:
+        path = _find_predict_json(yyyymmdd, str(alt_code))
+
     if not path:
         return None, None
 
@@ -214,13 +280,6 @@ def load_predict_for_track(yyyymmdd: str, baba: int, place_code: str):
 
     race_map = {int(r["race_no"]): r for r in races}
     return race_map, path
-
-
-# ====== keiba.go.jp 結果（RaceMarkTable）上位3 ======
-def _norm_text(s: str) -> str:
-    s = str(s).replace("\u3000", " ")
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
 
 def clean_horse_name(name: str) -> str:
     s = _norm_text(name)
