@@ -77,16 +77,18 @@ def ymd_dot(yyyymmdd: str) -> str:
     return str(yyyymmdd)
 
 def safe_track_slug(place: str, place_code: str = "") -> str:
-    # place_code があればそれ優先（数字/英字想定）
+    # ★最小変更：
+    # place（開催場名）が取れるなら、常に固定の英字slugを優先
+    p = str(place or "").strip()
+    if p in TRACK_SLUG:
+        return TRACK_SLUG[p]
+
+    # place が不明なケースだけ place_code を使う（数字でもOKだが最後の保険）
     pc = str(place_code or "").strip()
     if pc:
         s = re.sub(r"[^a-zA-Z0-9]+", "-", pc).strip("-").lower()
         if s:
             return s
-
-    p = str(place or "").strip()
-    if p in TRACK_SLUG:
-        return TRACK_SLUG[p]
 
     # fallback: 英数字だけ残す（日本語は消えるけど空は防ぐ）
     s = re.sub(r"[^a-zA-Z0-9]+", "-", p).strip("-").lower()
