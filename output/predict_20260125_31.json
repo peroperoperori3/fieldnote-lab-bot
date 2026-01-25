@@ -12,8 +12,8 @@
           "mark": "◎",
           "umaban": 2,
           "name": "ランギロア",
-          "score": 79.65174999999999,
-          "sp": 70.0,
+          "score": 58.85175,
+          "sp": 49.2,
           "base_index": 76.0,
           "jockey": "宮川実",
           "jockey_add": 10.258750000000001,
@@ -27,8 +27,8 @@
           "mark": "〇",
           "umaban": 3,
           "name": "シデレウス",
-          "score": 75.4585,
-          "sp": 67.5,
+          "score": 54.5585,
+          "sp": 46.6,
           "base_index": 72.0,
           "jockey": "山崎雅",
           "jockey_add": 3.7925,
@@ -40,25 +40,10 @@
         },
         {
           "mark": "▲",
-          "umaban": 7,
-          "name": "テクノリバタリアン",
-          "score": 73.18900000000001,
-          "sp": 65.625,
-          "base_index": 69.0,
-          "jockey": "加藤翔",
-          "jockey_add": 3.32,
-          "source": {
-            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601250131&date=2026%2F1%2F25&no=1&id=31&p=fp",
-            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=1&condition=1",
-            "nar_condition": "1"
-          }
-        },
-        {
-          "mark": "△",
           "umaban": 4,
           "name": "ヴィルアヴァンセ",
-          "score": 70.35,
-          "sp": 63.75,
+          "score": 54.2,
+          "sp": 47.6,
           "base_index": 66.0,
           "jockey": "多田誠",
           "jockey_add": 0.0,
@@ -69,14 +54,29 @@
           }
         },
         {
-          "mark": "☆",
+          "mark": "△",
           "umaban": 6,
           "name": "チュラリヴァル",
-          "score": 65.91675000000001,
-          "sp": 59.375,
+          "score": 54.14175,
+          "sp": 47.6,
           "base_index": 59.0,
           "jockey": "近藤翔",
           "jockey_add": 3.20875,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601250131&date=2026%2F1%2F25&no=1&id=31&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 7,
+          "name": "テクノリバタリアン",
+          "score": 49.064,
+          "sp": 41.5,
+          "base_index": 69.0,
+          "jockey": "加藤翔",
+          "jockey_add": 3.32,
           "source": {
             "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601250131&date=2026%2F1%2F25&no=1&id=31&p=fp",
             "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=1&condition=1",
@@ -86,15 +86,15 @@
       ],
       "konsen": {
         "name": "混戦度",
-        "value": 16.7,
+        "value": 18.4,
         "is_focus": false,
-        "gap12": 4.193,
-        "gap15": 13.735,
+        "gap12": 4.293,
+        "gap15": 9.788,
         "gap12_mid": 0.8,
         "gap15_mid": 3.0,
         "focus_th": 50.0,
-        "sc12": 0.1602,
-        "sc15": 0.1793
+        "sc12": 0.1571,
+        "sc15": 0.2346
       }
     },
     {
@@ -564,29 +564,14 @@
     },
     {
       "race_no": 7,
-      "race_name": "Ｃ２-３ «",
+      "race_name": "Ｃ２-３",
       "picks": [
         {
           "mark": "◎",
-          "umaban": 8,
-          "name": "ナムラクレープ",
-          "score": 83.09866279069766,
-          "sp": 69.65116279069767,
-          "base_index": 113.0,
-          "jockey": "赤岡修",
-          "jockey_add": 10.737499999999999,
-          "source": {
-            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601250731&date=2026%2F1%2F25&no=7&id=31&p=fp",
-            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=7&condition=1",
-            "nar_condition": "1"
-          }
-        },
-        {
-          "mark": "〇",
           "umaban": 7,
           "name": "スピードイエロー",
-          "score": 82.23325000000001,
-          "sp": 70.0,
+          "score": 85.03325000000001,
+          "sp": 72.8,
           "base_index": 114.0,
           "jockey": "佐原秀",
           "jockey_add": 4.16625,
@@ -597,11 +582,11 @@
           }
         },
         {
-          "mark": "▲",
+          "mark": "〇",
           "umaban": 2,
           "name": "ダノンファスト",
-          "score": 79.13038953488372,
-          "sp": 67.55813953488372,
+          "score": 82.77225,
+          "sp": 71.2,
           "base_index": 107.0,
           "jockey": "畑中信",
           "jockey_add": 4.36125,
@@ -612,11 +597,26 @@
           }
         },
         {
+          "mark": "▲",
+          "umaban": 8,
+          "name": "ナムラクレープ",
+          "score": 82.74749999999999,
+          "sp": 69.3,
+          "base_index": 113.0,
+          "jockey": "赤岡修",
+          "jockey_add": 10.737499999999999,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601250731&date=2026%2F1%2F25&no=7&id=31&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=7&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
           "mark": "△",
           "umaban": 5,
           "name": "ルージュブラゾン",
-          "score": 77.47145348837209,
-          "sp": 65.81395348837209,
+          "score": 75.55749999999999,
+          "sp": 63.9,
           "base_index": 102.0,
           "jockey": "永森大",
           "jockey_add": 7.287500000000001,
@@ -630,8 +630,8 @@
           "mark": "☆",
           "umaban": 3,
           "name": "キングダムウイナー",
-          "score": 71.04906976744186,
-          "sp": 61.27906976744186,
+          "score": 68.87,
+          "sp": 59.1,
           "base_index": 89.0,
           "jockey": "岡遼太",
           "jockey_add": 4.35,
@@ -644,27 +644,27 @@
       ],
       "konsen": {
         "name": "混戦度",
-        "value": 38.2,
+        "value": 22.5,
         "is_focus": false,
-        "gap12": 0.865,
-        "gap15": 12.05,
+        "gap12": 2.261,
+        "gap15": 16.163,
         "gap12_mid": 0.8,
         "gap15_mid": 3.0,
         "focus_th": 50.0,
-        "sc12": 0.4804,
-        "sc15": 0.1993
+        "sc12": 0.2614,
+        "sc15": 0.1565
       }
     },
     {
       "race_no": 8,
-      "race_name": "Ｃ２-２ «",
+      "race_name": "Ｃ２-２",
       "picks": [
         {
           "mark": "◎",
           "umaban": 7,
           "name": "ビービーバシリス",
-          "score": 79.9,
-          "sp": 70.0,
+          "score": 72.5,
+          "sp": 62.6,
           "base_index": 99.0,
           "jockey": "多田誠",
           "jockey_add": 0.0,
@@ -678,8 +678,8 @@
           "mark": "〇",
           "umaban": 8,
           "name": "イルクオーレ",
-          "score": 78.0563076923077,
-          "sp": 67.6923076923077,
+          "score": 72.06400000000001,
+          "sp": 61.7,
           "base_index": 97.0,
           "jockey": "加藤翔",
           "jockey_add": 3.32,
@@ -693,8 +693,8 @@
           "mark": "▲",
           "umaban": 1,
           "name": "ドライブアローカス",
-          "score": 77.03211538461538,
-          "sp": 65.38461538461539,
+          "score": 70.74749999999999,
+          "sp": 59.1,
           "base_index": 95.0,
           "jockey": "赤岡修",
           "jockey_add": 10.737499999999999,
@@ -708,8 +708,8 @@
           "mark": "△",
           "umaban": 10,
           "name": "トロルトゥンガ",
-          "score": 73.83442307692307,
-          "sp": 63.07692307692308,
+          "score": 70.4575,
+          "sp": 59.7,
           "base_index": 93.0,
           "jockey": "永森大",
           "jockey_add": 7.287500000000001,
@@ -721,13 +721,13 @@
         },
         {
           "mark": "☆",
-          "umaban": 11,
-          "name": "ゲンパチハマジ",
-          "score": 72.15332692307692,
-          "sp": 61.92307692307692,
-          "base_index": 92.0,
-          "jockey": "井上瑛",
-          "jockey_add": 5.151250000000001,
+          "umaban": 9,
+          "name": "ワクワクドリーム",
+          "score": 69.4945,
+          "sp": 59.7,
+          "base_index": 90.0,
+          "jockey": "妹尾浩",
+          "jockey_add": 3.9725,
           "source": {
             "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601250831&date=2026%2F1%2F25&no=8&id=31&p=fp",
             "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=8&condition=1",
@@ -737,15 +737,15 @@
       ],
       "konsen": {
         "name": "混戦度",
-        "value": 29.4,
-        "is_focus": false,
-        "gap12": 1.844,
-        "gap15": 7.747,
+        "value": 59.6,
+        "is_focus": true,
+        "gap12": 0.436,
+        "gap15": 3.005,
         "gap12_mid": 0.8,
         "gap15_mid": 3.0,
         "focus_th": 50.0,
-        "sc12": 0.3026,
-        "sc15": 0.2792
+        "sc12": 0.6472,
+        "sc15": 0.4995
       }
     },
     {
@@ -843,14 +843,14 @@
     },
     {
       "race_no": 10,
-      "race_name": "ジャニュアリー特別Ａ-１ «",
+      "race_name": "ジャニュアリー特別Ａ-１",
       "picks": [
         {
           "mark": "◎",
           "umaban": 7,
           "name": "ウインヴェルデ",
-          "score": 82.83024999999999,
-          "sp": 70.0,
+          "score": 89.23025,
+          "sp": 76.4,
           "base_index": 118.0,
           "jockey": "井上瑛",
           "jockey_add": 5.151250000000001,
@@ -862,25 +862,10 @@
         },
         {
           "mark": "〇",
-          "umaban": 5,
-          "name": "ローズボウル",
-          "score": 82.5585,
-          "sp": 70.0,
-          "base_index": 118.0,
-          "jockey": "山崎雅",
-          "jockey_add": 3.7925,
-          "source": {
-            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601251031&date=2026%2F1%2F25&no=10&id=31&p=fp",
-            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=10&condition=1",
-            "nar_condition": "1"
-          }
-        },
-        {
-          "mark": "▲",
           "umaban": 2,
           "name": "ニクソンテソーロ",
-          "score": 82.464,
-          "sp": 70.0,
+          "score": 88.164,
+          "sp": 75.7,
           "base_index": 118.0,
           "jockey": "加藤翔",
           "jockey_add": 3.32,
@@ -891,11 +876,11 @@
           }
         },
         {
-          "mark": "△",
+          "mark": "▲",
           "umaban": 3,
           "name": "ワイドカント",
-          "score": 79.60175,
-          "sp": 66.25,
+          "score": 87.45174999999999,
+          "sp": 74.1,
           "base_index": 113.0,
           "jockey": "宮川実",
           "jockey_add": 10.258750000000001,
@@ -906,14 +891,29 @@
           }
         },
         {
+          "mark": "△",
+          "umaban": 5,
+          "name": "ローズボウル",
+          "score": 85.35849999999999,
+          "sp": 72.8,
+          "base_index": 118.0,
+          "jockey": "山崎雅",
+          "jockey_add": 3.7925,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601251031&date=2026%2F1%2F25&no=10&id=31&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=10&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
           "mark": "☆",
-          "umaban": 8,
-          "name": "フォーサイドナイン",
-          "score": 77.1475,
-          "sp": 64.0,
-          "base_index": 110.0,
-          "jockey": "赤岡修",
-          "jockey_add": 10.737499999999999,
+          "umaban": 1,
+          "name": "ミズワリヲクダサイ",
+          "score": 82.1345,
+          "sp": 70.3,
+          "base_index": 109.0,
+          "jockey": "岡村卓",
+          "jockey_add": 4.6725,
           "source": {
             "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601251031&date=2026%2F1%2F25&no=10&id=31&p=fp",
             "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=10&condition=1",
@@ -923,27 +923,27 @@
       ],
       "konsen": {
         "name": "混戦度",
-        "value": 60.6,
-        "is_focus": true,
-        "gap12": 0.272,
-        "gap15": 5.683,
+        "value": 38.3,
+        "is_focus": false,
+        "gap12": 1.066,
+        "gap15": 7.096,
         "gap12_mid": 0.8,
         "gap15_mid": 3.0,
         "focus_th": 50.0,
-        "sc12": 0.7464,
-        "sc15": 0.3455
+        "sc12": 0.4287,
+        "sc15": 0.2972
       }
     },
     {
       "race_no": 11,
-      "race_name": "ファイナルレースＣ２-５記者選抜 «",
+      "race_name": "一発逆転ファイナルレースＣ２-５記者選抜",
       "picks": [
         {
           "mark": "◎",
           "umaban": 5,
           "name": "イエスゴーオン",
-          "score": 80.66525,
-          "sp": 70.0,
+          "score": 72.96525000000001,
+          "sp": 62.3,
           "base_index": 101.0,
           "jockey": "中島龍",
           "jockey_add": 2.82625,
@@ -957,8 +957,8 @@
           "mark": "〇",
           "umaban": 11,
           "name": "テーオールノワール",
-          "score": 77.5575,
-          "sp": 67.1875,
+          "score": 69.17,
+          "sp": 58.8,
           "base_index": 95.0,
           "jockey": "岡遼太",
           "jockey_add": 4.35,
@@ -970,25 +970,10 @@
         },
         {
           "mark": "▲",
-          "umaban": 8,
-          "name": "スパイスアップ",
-          "score": 75.05425,
-          "sp": 65.3125,
-          "base_index": 91.0,
-          "jockey": "近藤翔",
-          "jockey_add": 3.20875,
-          "source": {
-            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601251131&date=2026%2F1%2F25&no=11&id=31&p=fp",
-            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=11&condition=1",
-            "nar_condition": "1"
-          }
-        },
-        {
-          "mark": "△",
           "umaban": 2,
           "name": "コルテデフィート",
-          "score": 73.67125,
-          "sp": 64.375,
+          "score": 68.99625,
+          "sp": 59.7,
           "base_index": 89.0,
           "jockey": "木村直",
           "jockey_add": 1.9812499999999997,
@@ -999,14 +984,29 @@
           }
         },
         {
+          "mark": "△",
+          "umaban": 8,
+          "name": "スパイスアップ",
+          "score": 67.54175,
+          "sp": 57.8,
+          "base_index": 91.0,
+          "jockey": "近藤翔",
+          "jockey_add": 3.20875,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601251131&date=2026%2F1%2F25&no=11&id=31&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=11&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
           "mark": "☆",
-          "umaban": 4,
-          "name": "バイユーラン",
-          "score": 73.275,
-          "sp": 64.375,
-          "base_index": 89.0,
-          "jockey": "多田誠",
-          "jockey_add": 0.0,
+          "umaban": 12,
+          "name": "クラシカルタイプ",
+          "score": 66.46575,
+          "sp": 57.2,
+          "base_index": 86.0,
+          "jockey": "上田将",
+          "jockey_add": 3.32875,
           "source": {
             "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202601251131&date=2026%2F1%2F25&no=11&id=31&p=fp",
             "nar_table_url": "https://nar.k-ba.net/table.php?date=20260125&track=31&number=11&condition=1",
@@ -1016,19 +1016,19 @@
       ],
       "konsen": {
         "name": "混戦度",
-        "value": 23.4,
+        "value": 22.4,
         "is_focus": false,
-        "gap12": 3.108,
-        "gap15": 7.39,
+        "gap12": 3.795,
+        "gap15": 6.5,
         "gap12_mid": 0.8,
         "gap15_mid": 3.0,
         "focus_th": 50.0,
-        "sc12": 0.2047,
-        "sc15": 0.2887
+        "sc12": 0.1741,
+        "sc15": 0.3158
       }
     }
   ],
-  "generated_at": "2026-01-25T11:31:02",
+  "generated_at": "2026-01-25T12:01:13",
   "weights": {
     "SP_W": 1.0,
     "KB_W": 0.1,
