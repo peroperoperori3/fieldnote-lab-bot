@@ -262,6 +262,35 @@ def _norm_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
+def clean_horse_name(name: str) -> str:
+    """
+    馬名の後ろに付く余計な文字（例: '5ヶ月前' 等）を除去して馬名だけ返す
+    """
+    s = _norm_text(name)
+
+    # よくある「○ヶ月前」「○日前」などを末尾から除去
+    s = re.sub(r"\s*\d+\s*(?:ヶ月前|か月前|日前|時間前)\s*$", "", s)
+
+    # 末尾に余計な注記が入るケースの保険（必要なら追加でパターン増やせる）
+    s = re.sub(r"\s*(?:想定|取消|除外)\s*$", "", s)
+
+    return s.strip()
+
+
+def clean_race_name(race_name: str) -> str:
+    """
+    レース名の後ろに付く '1R » 10:50 良...' みたいな情報を削ってレース名だけにする
+    """
+    s = _norm_text(race_name)
+
+    # 「 1R » 」以降を削除（あなたの症状に直撃）
+    s = re.sub(r"\s+\d{1,2}R\s*.*$", "", s)
+
+    # もし '»' が残る/別形式で混ざるケースの保険
+    s = s.split("»")[0].strip()
+
+    return s.strip()
+
 def nar_tablephp_url(date: str, track: str, number: str, condition: str = "1") -> str:
     # https://nar.k-ba.net/table.php?date=20260125&track=31&number=1&condition=1
     return f"https://nar.k-ba.net/table.php?date={date}&track={track}&number={number}&condition={condition}"
@@ -297,7 +326,7 @@ def parse_nar_tablephp(html: str):
     race_name = ""
     h3 = soup.find("h3")
     if h3:
-        race_name = _norm_text(h3.get_text(" ", strip=True))
+        race_name = clean_race_name(h3.get_text(" ", strip=True))
 
     t = soup.find("table", id="table")
     if not t:
@@ -342,7 +371,7 @@ def parse_nar_tablephp(html: str):
         if not mban:
             continue
 
-        name = vals[c_name].strip()
+        name = clean_horse_name(vals[c_name])
         jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[c_jockey])
 
         mavg = re.search(r"(\d+(?:\.\d+)?)", vals[c_avg])
@@ -374,9 +403,9 @@ def parse_top3_from_racemark(html_text: str):
         umaban = None
         name = None
         if len(tds) >= 4 and re.fullmatch(r"\d+", tds[2]):
-            umaban = int(tds[2]); name = tds[3]
+            umaban = int(tds[2]); name = clean_horse_name(tds[3])
         elif len(tds) >= 3 and re.fullmatch(r"\d+", tds[1]):
-            umaban = int(tds[1]); name = tds[2]
+            umaban = int(tds[1]); name = clean_horse_name(tds[2])
         else:
             continue
 
