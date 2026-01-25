@@ -40,7 +40,7 @@ KONSEN_ENABLE = os.environ.get("KONSEN_ENABLE", "1").strip() != "0"
 KONSEN_NAME = os.environ.get("KONSEN_NAME", "混戦度")
 KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
-KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "50"))
+KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "30"))
 KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
 
 # ===== NAR（nar.k-ba.net）track code（= keiba.go.jp k_babaCode）※帯広(3)除外 =====
