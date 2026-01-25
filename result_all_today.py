@@ -113,19 +113,14 @@ def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
 # =========================
 # ★predict JSON を探す（これが“完全一致”のキモ）
 # =========================
-def _find_predict_json(yyyymmdd: str, baba: int, place_code: str):
-    # まず「baba（19とか）」で探す（あなたの現状のpredict出力はこれ）
+def _find_predict_json(yyyymmdd: str, code: str):
+    # code は「baba（19とか）」または「place_code（43とか）」のどっちでもOK
+    code = str(code)
     cand = []
-    cand += glob.glob(f"output/predict_{yyyymmdd}_{baba}.json")
-    cand += glob.glob(f"predict_{yyyymmdd}_{baba}.json")
-    cand += glob.glob(f"out/predict_{yyyymmdd}_{baba}.json")
-    cand += glob.glob(f"**/predict_{yyyymmdd}_{baba}.json", recursive=True)
-
-    # 念のため「place_code（43とか）」でも探す（将来そっちに変える可能性用）
-    cand += glob.glob(f"output/predict_{yyyymmdd}_{place_code}.json")
-    cand += glob.glob(f"predict_{yyyymmdd}_{place_code}.json")
-    cand += glob.glob(f"out/predict_{yyyymmdd}_{place_code}.json")
-    cand += glob.glob(f"**/predict_{yyyymmdd}_{place_code}.json", recursive=True)
+    cand += glob.glob(f"output/predict_{yyyymmdd}_{code}.json")
+    cand += glob.glob(f"predict_{yyyymmdd}_{code}.json")
+    cand += glob.glob(f"out/predict_{yyyymmdd}_{code}.json")
+    cand += glob.glob(f"**/predict_{yyyymmdd}_{code}.json", recursive=True)
 
     cand = [c for c in cand if Path(c).is_file()]
     return cand[0] if cand else None
@@ -255,14 +250,15 @@ def _norm_pred_races(pred_json: dict):
             })
     return out
 
-def load_predict_for_track(yyyymmdd: str, place_code: str, alt_code: str | None = None):
+def load_predict_for_track(yyyymmdd: str, baba: int, place_code: str):
     """predict JSON を読み込んで race_no -> dict を返す。
-    place_code は従来の出力コード（例: 43）、
-    alt_code は trackコード/ババコード系（例: 19）など、別名出力の保険。
+    探し方：
+      - まず baba（例: 19）で探す（あなたの現状のpredict出力はこれ）
+      - 見つからなければ place_code（例: 43）でも探す（将来の保険）
     """
-    path = _find_predict_json(yyyymmdd, place_code)
-    if (not path) and alt_code:
-        path = _find_predict_json(yyyymmdd, str(alt_code))
+    path = _find_predict_json(yyyymmdd, str(baba))
+    if not path:
+        path = _find_predict_json(yyyymmdd, str(place_code))
 
     if not path:
         return None, None
@@ -280,6 +276,15 @@ def load_predict_for_track(yyyymmdd: str, place_code: str, alt_code: str | None 
 
     race_map = {int(r["race_no"]): r for r in races}
     return race_map, path
+
+
+# =========================
+# 結果ページ用の整形
+# =========================
+def _norm_text(s: str) -> str:
+    s = str(s).replace("\u3000", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 def clean_horse_name(name: str) -> str:
     s = _norm_text(name)
@@ -781,6 +786,12 @@ def main():
             if REFUND_DEBUG:
                 print(f"[REFUND_DEBUG] {track} {rno}R racemark_url={rm_url}")
                 print(f"[REFUND_DEBUG] {track} {rno}R refunds_found={len(san)} refunds={san[:5]}")
+
+            # ★修正：レースごと欠損でも「スキップ」ではなく「結果なし」で載せたいならこのまま。
+            # ただし、完全にページが壊れている/レース自体が存在しないケースは“載せない”方がよければ下をONに。
+            # if not rm_html:
+            #     print(f"[SKIP] {track} {rno}R: RaceMarkTable not found -> skip race")
+            #     continue
 
             # ---- 注目レースの三連複BOX収支（同着で複数三連複があれば全部加算）----
             bet_box = {"is_focus": False}
