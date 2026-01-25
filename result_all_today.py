@@ -278,17 +278,10 @@ def clean_horse_name(name: str) -> str:
 
 
 def clean_race_name(race_name: str) -> str:
-    """
-    レース名の後ろに付く '1R » 10:50 良...' みたいな情報を削ってレース名だけにする
-    """
     s = _norm_text(race_name)
-
-    # 「 1R » 」以降を削除（あなたの症状に直撃）
     s = re.sub(r"\s+\d{1,2}R\s*.*$", "", s)
-
-    # もし '»' が残る/別形式で混ざるケースの保険
     s = s.split("»")[0].strip()
-
+    s = s.split("«")[0].strip()
     return s.strip()
 
 def nar_tablephp_url(date: str, track: str, number: str, condition: str = "1") -> str:
