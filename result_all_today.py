@@ -292,6 +292,27 @@ def clean_horse_name(name: str) -> str:
     s = re.sub(r"\s*(?:想定|取消|除外)\s*$", "", s)
     return s.strip()
 
+
+def clean_race_name(raw: str) -> str:
+    s = _norm_text(raw)
+
+    # "8R ..." のようなプレフィックスが入る場合は落とす
+    s = re.sub(r"^\s*\d{1,2}R\s*", "", s).strip()
+
+    # "«" 以降（パンくず/ナビ等）を切り捨て
+    if "«" in s:
+        s = s.split("«")[0].strip()
+
+    # それでも "»" 等が残る場合
+    if "»" in s:
+        s = s.split("»")[0].strip()
+
+    # 表記ゆれ整形（お好み）
+    s = s.replace("－", "-").replace("―", "-").replace("—", "-")
+    s = re.sub(r"\s*-\s*", "-", s).strip()
+
+    return s
+
 def parse_top3_from_racemark(html_text: str):
     soup = BeautifulSoup(html_text, "lxml")
     top = []
@@ -576,7 +597,7 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
 
     for r in races_out:
         rno = int(r["race_no"])
-        race_name = (r.get("race_name") or "").strip()
+        race_name = clean_race_name((r.get("race_name") or "").strip())
 
         pred = r.get("pred_top5", [])
         top3 = r.get("result_top3", [])
@@ -767,7 +788,7 @@ def main():
                 continue
 
             konsen = pr.get("konsen") or {}
-            race_name = pr.get("race_name") or ""
+            race_name = clean_race_name(pr.get("race_name") or "")
 
             # ---- 結果（上位3）----
             rm_url = build_racemark_url(baba, yyyymmdd, rno)
