@@ -1,9 +1,13 @@
-# result_all_today.py  (fieldnote-lab-bot)  NAR(table.php)対応版
-# 変更点：
-# - 予想の元データを keibablood/kichiuma から NAR(table.php) の「平均指数」に切替
-# - keiba.go.jp の結果/払戻/PNL/HTML/JSON構造は極力維持
+# result_all_today.py  (fieldnote-lab-bot)  ★PREDICT完全一致版（推奨）
+# 目的：
+# - 「result の指数（上位5頭）」を predict と 100% 同じにする
+# やり方：
+# - result 側では指数の再計算をやめて、predict が出力した JSON（predict_YYYYMMDD_XX.json）を読み込んで使う
+# - その上で、keiba.go.jp から「結果（1〜3着）」と「払戻（三連複）」を取って、HTML/JSON/PNLを作る
+#
+# これで「predict と result の上位5頭・指数・混戦度」がズレなくなります。
 
-import os, re, json, time
+import os, re, json, time, glob
 from datetime import datetime
 from pathlib import Path
 
@@ -13,17 +17,8 @@ from bs4 import BeautifulSoup
 UA = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ja,en;q=0.8"}
 MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 
-# ===== スコア重み（予想と同じ）=====
-SP_W = float(os.environ.get("SP_W", "1.0"))
-KB_W = float(os.environ.get("KB_W", "0.10"))
-JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
-
-# ===== 混戦度（予想と同じ：ギャップ方式 / 環境変数で調整可）=====
+# ===== 混戦度の名前（表示用：predictからも来るけど保険）=====
 KONSEN_NAME = os.environ.get("KONSEN_NAME", "混戦度")
-KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
-KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
-KONSEN_FOCUS_TH  = float(os.environ.get("KONSEN_FOCUS_TH", "50"))
-KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
 
 # ===== 注目レース 三連複BOX収支 =====
 BET_ENABLED = os.environ.get("BET_ENABLED", "1").strip() != "0"
@@ -53,7 +48,6 @@ def load_pnl_total(path: str):
         d = json.loads(p.read_text(encoding="utf-8"))
         if not isinstance(d, dict):
             raise ValueError("invalid pnl_total.json")
-
         d.setdefault("invest", 0)
         d.setdefault("payout", 0)
         d.setdefault("profit", 0)
@@ -101,24 +95,6 @@ KEIBABLOOD_CODE = {
   "金沢": "46","笠松": "47","名古屋": "48","園田": "50","姫路": "51","高知": "54","佐賀": "55",
 }
 
-# kaisekisya（開催場別）
-KAISEKISYA_JOCKEY_URL = {
-  "門別": "https://www.kaisekisya.net/local/jockey/monbetsu.html",
-  "盛岡": "https://www.kaisekisya.net/local/jockey/morioka.html",
-  "水沢": "https://www.kaisekisya.net/local/jockey/mizusawa.html",
-  "浦和": "https://www.kaisekisya.net/local/jockey/urawa.html",
-  "船橋": "https://www.kaisekisya.net/local/jockey/funabashi.html",
-  "大井": "https://www.kaisekisya.net/local/jockey/ooi.html",
-  "川崎": "https://www.kaisekisya.net/local/jockey/kawasaki.html",
-  "金沢": "https://www.kaisekisya.net/local/jockey/kanazawa.html",
-  "笠松": "https://www.kaisekisya.net/local/jockey/kasamatsu.html",
-  "名古屋": "https://www.kaisekisya.net/local/jockey/nagoya.html",
-  "園田": "https://www.kaisekisya.net/local/jockey/sonoda.html",
-  "姫路": "https://www.kaisekisya.net/local/jockey/himeji.html",
-  "高知": "https://www.kaisekisya.net/local/jockey/kochi.html",
-  "佐賀": "https://www.kaisekisya.net/local/jockey/saga.html",
-}
-
 
 def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
     active = []
@@ -135,253 +111,121 @@ def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
     return active
 
 
-# ===== 混戦度（ギャップ方式）=====
-def _clamp(x, lo, hi):
-    return max(lo, min(hi, x))
+# =========================
+# ★predict JSON を読む（これが“完全一致”のキモ）
+# =========================
+def _find_predict_json(yyyymmdd: str, place_code: str):
+    # いままでの出力パターンを全部拾う（どれでもOK）
+    cand = []
+    cand += glob.glob(f"output/predict_{yyyymmdd}_{place_code}.json")
+    cand += glob.glob(f"predict_{yyyymmdd}_{place_code}.json")
+    cand += glob.glob(f"out/predict_{yyyymmdd}_{place_code}.json")
+    # たまに 0 埋め・拡張違いがあった時の保険（ワイルドカード）
+    cand += glob.glob(f"**/predict_{yyyymmdd}_{place_code}.json", recursive=True)
 
-def _sig_score_from_gap(gap: float, mid: float) -> float:
-    gap = max(0.0, float(gap))
-    mid = max(1e-9, float(mid))
-    return 1.0 / (1.0 + (gap / mid))
+    # 先頭を採用（同じものが複数見つかるときもあるため）
+    cand = [c for c in cand if Path(c).is_file()]
+    return cand[0] if cand else None
 
-def calc_konsen_gap(top5_scores_desc):
-    if not top5_scores_desc or len(top5_scores_desc) < 5:
-        return {
-            "name": KONSEN_NAME,
-            "value": 0.0,
-            "is_focus": False,
-            "gap12": None,
-            "gap15": None,
-            "gap12_mid": KONSEN_GAP12_MID,
-            "gap15_mid": KONSEN_GAP15_MID,
-            "focus_th": KONSEN_FOCUS_TH,
-        }
-
-    s1, s2, s3, s4, s5 = [float(x) for x in top5_scores_desc[:5]]
-    gap12 = max(0.0, s1 - s2)
-    gap15 = max(0.0, s1 - s5)
-
-    sc12 = _sig_score_from_gap(gap12, KONSEN_GAP12_MID)
-    sc15 = _sig_score_from_gap(gap15, KONSEN_GAP15_MID)
-
-    konsen01 = 0.65 * sc12 + 0.35 * sc15
-    konsen = round(100.0 * _clamp(konsen01, 0.0, 1.0), 1)
-    is_focus = bool(konsen >= float(KONSEN_FOCUS_TH))
-
-    return {
-        "name": KONSEN_NAME,
-        "value": konsen,
-        "is_focus": is_focus,
-        "gap12": round(gap12, 3),
-        "gap15": round(gap15, 3),
-        "gap12_mid": KONSEN_GAP12_MID,
-        "gap15_mid": KONSEN_GAP15_MID,
-        "focus_th": KONSEN_FOCUS_TH,
-        "sc12": round(sc12, 4),
-        "sc15": round(sc15, 4),
-    }
-
-
-# ====== kaisekisya 解析（騎手補正） ======
-def parse_kaisekisya_jockey_table(html: str):
-    soup = BeautifulSoup(html, "lxml")
-    target = None
-    for t in soup.find_all("table"):
-        txt = t.get_text(" ", strip=True)
-        if ("勝率" in txt) and ("連対率" in txt) and ("三連対率" in txt):
-            target = t
-            break
-    if not target:
-        return {}
-
-    rows = target.find_all("tr")
-    if len(rows) < 2:
-        return {}
-
-    header_cells = rows[0].find_all(["th","td"])
-    headers = [c.get_text(" ", strip=True) for c in header_cells]
-
-    def find_col(keys):
-        for i,h in enumerate(headers):
-            for k in keys:
-                if k in h:
-                    return i
-        return None
-
-    c_name = 0
-    c_win  = find_col(["勝率"])
-    c_quin = find_col(["連対率"])
-    c_tri  = find_col(["三連対率"])
-    if None in (c_win, c_quin, c_tri):
-        return {}
-
-    def pct(x):
-        m = re.search(r"([\d.]+)\s*%", str(x))
-        return float(m.group(1)) if m else None
-
-    stats = {}
-    for tr in rows[1:]:
-        tds = tr.find_all(["td","th"])
-        if not tds:
+def _norm_pred_races(pred_json: dict):
+    races = pred_json.get("races") or pred_json.get("RACES") or []
+    if not isinstance(races, list):
+        return []
+    out = []
+    for r in races:
+        if not isinstance(r, dict):
             continue
-        vals = [td.get_text(" ", strip=True) for td in tds]
-        mx = max(c_name, c_win, c_quin, c_tri)
-        if len(vals) <= mx:
+        rno = r.get("race_no") or r.get("raceNo") or r.get("no")
+        try:
+            rno = int(rno)
+        except Exception:
             continue
 
-        name = re.sub(r"\s+", "", vals[c_name])
-        win  = pct(vals[c_win])
-        quin = pct(vals[c_quin])
-        tri  = pct(vals[c_tri])
-        if name and (win is not None) and (quin is not None) and (tri is not None):
-            stats[name] = (win, quin, tri)
-    return stats
+        # 予想上位5
+        top5 = r.get("pred_top5") or r.get("top5") or r.get("predict_top5") or []
+        if not isinstance(top5, list):
+            top5 = []
 
-def norm_jockey3(s: str) -> str:
-    s = re.sub(r"\s+", "", str(s))
-    s = re.sub(r"[◀◁▶▷]+", "", s)
-    s = re.sub(r"[()（）]", "", s)
-    return s[:3]
+        pred_top5 = []
+        for i, p in enumerate(top5[:5]):
+            if not isinstance(p, dict):
+                continue
+            umaban = p.get("umaban") or p.get("umaban_no") or p.get("horse_no") or p.get("num")
+            try:
+                umaban = int(umaban)
+            except Exception:
+                continue
+            name = p.get("name") or p.get("horse_name") or ""
+            score = p.get("score") if "score" in p else (p.get("sp") or p.get("index"))
+            try:
+                score = float(score)
+            except Exception:
+                score = None
 
-def match_jockey_by3(j3: str, stats: dict):
-    for full, rates in stats.items():
-        if full.startswith(j3):
-            return rates
-    return None
+            mark = p.get("mark") or (MARKS5[i] if i < len(MARKS5) else "—")
+            if score is None:
+                continue
+            pred_top5.append({
+                "mark": mark,
+                "umaban": int(umaban),
+                "name": str(name),
+                "score": float(score),
+                # 互換：predictが持ってるなら残す
+                "sp": p.get("sp"),
+                "base_index": p.get("base_index"),
+                "jockey": p.get("jockey", ""),
+                "jockey_add": p.get("jockey_add", 0.0),
+                "source": p.get("source", {}),
+            })
 
-def jockey_add_points(win: float, quin: float, tri: float) -> float:
-    raw = win * 0.45 + quin * 0.35 + tri * 0.20
-    return raw / 4.0
+        # 混戦度（predictの値をそのまま）
+        konsen = r.get("konsen") or {}
+        if not isinstance(konsen, dict):
+            konsen = {}
+
+        race_name = r.get("race_name") or r.get("name") or ""
+
+        out.append({
+            "race_no": rno,
+            "race_name": str(race_name or ""),
+            "pred_top5": pred_top5,
+            "konsen": konsen,
+        })
+    return out
+
+def load_predict_for_track(yyyymmdd: str, place_code: str):
+    path = _find_predict_json(yyyymmdd, place_code)
+    if not path:
+        return None, None
+
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[WARN] predict json read failed: {path} err={e}")
+        return None, path
+
+    races = _norm_pred_races(d)
+    if not races:
+        print(f"[WARN] predict json has no races: {path}")
+        return None, path
+
+    # race_no -> dict
+    race_map = {int(r["race_no"]): r for r in races}
+    return race_map, path
 
 
-# =========================
-# ★NAR table.php（平均指数）取得
-# =========================
+# ====== keiba.go.jp 結果（RaceMarkTable）上位3 ======
 def _norm_text(s: str) -> str:
     s = str(s).replace("\u3000", " ")
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
 def clean_horse_name(name: str) -> str:
-    """
-    馬名の後ろに付く余計な文字（例: '5ヶ月前' 等）を除去して馬名だけ返す
-    """
     s = _norm_text(name)
-
-    # よくある「○ヶ月前」「○日前」などを末尾から除去
     s = re.sub(r"\s*\d+\s*(?:ヶ月前|か月前|日前|時間前)\s*$", "", s)
-
-    # 末尾に余計な注記が入るケースの保険（必要なら追加でパターン増やせる）
     s = re.sub(r"\s*(?:想定|取消|除外)\s*$", "", s)
-
     return s.strip()
 
-
-def clean_race_name(race_name: str) -> str:
-    s = _norm_text(race_name)
-    s = re.sub(r"\s+\d{1,2}R\s*.*$", "", s)
-    s = s.split("»")[0].strip()
-    s = s.split("«")[0].strip()
-    return s.strip()
-
-def nar_tablephp_url(date: str, track: str, number: str, condition: str = "1") -> str:
-    # https://nar.k-ba.net/table.php?date=20260125&track=31&number=1&condition=1
-    return f"https://nar.k-ba.net/table.php?date={date}&track={track}&number={number}&condition={condition}"
-
-def fetch_nar_tablephp(date: str, track: str, number: str, condition: str = "1", debug=False) -> str:
-    url = "https://nar.k-ba.net/table.php"
-    params = {"date": date, "track": track, "number": number, "condition": condition}
-    try:
-        r = requests.get(url, params=params, headers=UA, timeout=25)
-    except Exception as e:
-        if debug:
-            print(f"[GET] {url} params={params} ERROR={e}")
-        return ""
-    if debug:
-        print(f"[GET] {r.url} status={r.status_code} bytes={len(r.content)}")
-    if r.status_code != 200:
-        return ""
-    r.encoding = r.apparent_encoding
-    return r.text
-
-def parse_nar_tablephp(html: str):
-    """
-    return: (rows, race_name)
-      rows: [{"umaban":1,"name":"...","jockey":"...","avg_index":56.0}, ...]
-      race_name: h3見出し等（取れなければ空）
-    """
-    if not html:
-        return [], ""
-
-    soup = BeautifulSoup(html, "lxml")
-
-    # レース名/条件クラス：ページ内の <h3> がそれっぽい（例: ３歳－５）
-    race_name = ""
-    h3 = soup.find("h3")
-    if h3:
-        race_name = clean_race_name(h3.get_text(" ", strip=True))
-
-    t = soup.find("table", id="table")
-    if not t:
-        return [], race_name
-
-    trs = t.find_all("tr")
-    if len(trs) < 2:
-        return [], race_name
-
-    head = [_norm_text(c.get_text(" ", strip=True)) for c in trs[0].find_all(["th","td"])]
-
-    def find_col(keys):
-        for i, h in enumerate(head):
-            for k in keys:
-                if k in h:
-                    return i
-        return None
-
-    c_umaban = find_col(["馬番", "馬", "番"])
-    c_name   = find_col(["馬名"])
-    c_jockey = find_col(["騎手"])
-
-    c_avg    = find_col(["平均指数"])
-    if c_avg is None:
-        idx_cols = [i for i, h in enumerate(head) if "指数" in h]
-        c_avg = max(idx_cols) if idx_cols else None
-
-    if None in (c_umaban, c_name, c_jockey, c_avg):
-        return [], race_name
-
-    rows = []
-    for tr in trs[1:]:
-        tds = tr.find_all(["td","th"])
-        if not tds:
-            continue
-        vals = [_norm_text(td.get_text(" ", strip=True)) for td in tds]
-        mx = max(c_umaban, c_name, c_jockey, c_avg)
-        if len(vals) <= mx:
-            continue
-
-        mban = re.search(r"\d{1,2}", vals[c_umaban])
-        if not mban:
-            continue
-
-        name = clean_horse_name(vals[c_name])
-        jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[c_jockey])
-
-        mavg = re.search(r"(\d+(?:\.\d+)?)", vals[c_avg])
-        if not mavg:
-            continue
-
-        rows.append({
-            "umaban": int(mban.group()),
-            "name": name,
-            "jockey": jockey,
-            "avg_index": float(mavg.group(1)),
-        })
-
-    return rows, race_name
-
-
-# ====== keiba.go.jp 結果（RaceMarkTable）上位3 ======
 def parse_top3_from_racemark(html_text: str):
     soup = BeautifulSoup(html_text, "lxml")
     top = []
@@ -565,7 +409,7 @@ def build_racemark_url(baba: int, yyyymmdd: str, rno: int):
     )
 
 
-# ====== HTML（あなたの現行をそのまま） ======
+# ====== HTML（あなたの現行デザイン維持） ======
 def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
     import html as _html
 
@@ -806,10 +650,8 @@ def main():
     os.makedirs("output", exist_ok=True)
 
     print(f"[INFO] DATE={yyyymmdd}")
-    print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
-    print(f"[INFO] KONSEN name={KONSEN_NAME} gap12_mid={KONSEN_GAP12_MID} gap15_mid={KONSEN_GAP15_MID} focus_th={KONSEN_FOCUS_TH}")
     print(f"[INFO] BET enabled={BET_ENABLED} bet_unit={BET_UNIT} box_n={BET_BOX_N}")
-    print(f"[INFO] SOURCE = NAR table.php (avg_index) + kaisekisya(jockey) + keiba.go.jp(result/refund)")
+    print(f"[INFO] SOURCE = predict JSON (指数/混戦度は完全一致) + keiba.go.jp(result/refund)")
 
     active = detect_active_tracks_keibago(yyyymmdd, debug=DEBUG)
     print(f"[INFO] active_tracks = {active}")
@@ -819,15 +661,19 @@ def main():
 
     for track in active:
         baba = BABA_CODE.get(track)
-        track_id = BABA_CODE.get(track)  # ★NARのtrackもこれを使う（あなたの検証通り）
         place_code = KEIBABLOOD_CODE.get(track)  # ★ファイル名（従来どおり）
-        if not baba or not track_id or not place_code:
+        if not baba or not place_code:
             print(f"[SKIP] {track}: code missing")
             continue
 
-        # ---- 騎手成績 ----
-        jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
-        jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
+        # ★predict読み込み（ここが最重要）
+        pred_map, pred_path = load_predict_for_track(yyyymmdd, place_code)
+        if not pred_map:
+            print(f"[SKIP] {track}: predict json not found. (need predict run first) place_code={place_code}")
+            continue
+
+        if DEBUG:
+            print(f"[DEBUG] {track}: using predict={pred_path}")
 
         # ---- 払戻（当日払戻金）を先にまとめて取得（同着対応） ----
         ref_url = refundmoney_url(baba, yyyymmdd)
@@ -837,7 +683,6 @@ def main():
             print(f"[REFUND_DEBUG] {track} refundmoney_url={ref_url} races_with_sanrenpuku={len(sanrenpuku_map)}")
 
         races_out = []
-        track_incomplete = False
 
         # track内の注目BOX収支（記事サマリ用）
         focus_races = 0
@@ -845,89 +690,18 @@ def main():
         payout_sum = 0
         hits_sum = 0
 
-        # ★地方は最大12R想定（足りなければ途中でbreak）
-        miss_streak = 0
+        # ★地方は最大12R想定（predictにあるレースだけ処理）
         for rno in range(1, 13):
-            # ---- NAR 平均指数（table.php）取得 ----
-            nar_html = fetch_nar_tablephp(
-                date=yyyymmdd,
-                track=str(track_id),
-                number=str(rno),
-                condition="1",  # 良（まずは固定：必要なら後で条件自動推定も可能）
-                debug=False
-            )
-            nar_rows, race_name = parse_nar_tablephp(nar_html)
-
-            if not nar_rows or len(nar_rows) < 5:
-                miss_streak += 1
-                if DEBUG:
-                    print(f"[MISS] {track} {rno}R nar_rows={len(nar_rows)} -> skip")
-                # 連続で取れないなら終了（例：その日9Rまで）
-                if miss_streak >= 2 and rno >= 8:
-                    break
+            pr = pred_map.get(int(rno))
+            if not pr:
                 continue
-            miss_streak = 0
 
-            # ---- スコア計算（平均指数 + 騎手補正）----
-            horses_scored = []
-            for h in nar_rows:
-                u = int(h["umaban"])
-                base = float(h["avg_index"])  # 平均指数
-                j = h.get("jockey", "")
+            pred_top5 = pr.get("pred_top5", [])
+            if not pred_top5 or len(pred_top5) < 5:
+                continue
 
-                rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
-                add = jockey_add_points(*rates) if rates else 0.0
-
-                # ★「SP」として平均指数を使う（最小変更）
-                sp = base
-                score = (SP_W * sp) + (KB_W * base) + (JOCKEY_W * add)
-
-                horses_scored.append({
-                    "umaban": u,
-                    "name": h.get("name", ""),
-                    "jockey": j,
-                    "sp": float(sp),
-                    "base_index": float(base),
-                    "jockey_add": float(add),
-                    "score": float(score),
-                    "source": {
-                        "nar_tablephp_url": nar_tablephp_url(yyyymmdd, str(track_id), str(rno), "1")
-                    },
-                })
-
-            if len(horses_scored) < 5:
-                print(f"[SKIP] {track} {rno}R: horses < 5 -> skip track")
-                track_incomplete = True
-                break
-
-            horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
-            top5 = horses_scored[:5]
-            top5_scores = [float(h["score"]) for h in top5]
-            konsen = calc_konsen_gap(top5_scores)
-
-            if KONSEN_DEBUG:
-                print(
-                    f"[KONSEN] {track} {rno}R "
-                    f"value={konsen.get('value')} "
-                    f"focus={konsen.get('is_focus')} "
-                    f"gap12={konsen.get('gap12')} "
-                    f"gap15={konsen.get('gap15')} "
-                    f"top5_scores={[round(x,2) for x in top5_scores]}"
-                )
-
-            pred_top5 = []
-            for j, hh in enumerate(top5):
-                pred_top5.append({
-                    "mark": MARKS5[j],
-                    "umaban": int(hh["umaban"]),
-                    "name": hh["name"],
-                    "score": float(hh["score"]),
-                    "sp": float(hh["sp"]),
-                    "base_index": float(hh["base_index"]),
-                    "jockey": hh.get("jockey",""),
-                    "jockey_add": float(hh["jockey_add"]),
-                    "source": hh.get("source", {}),
-                })
+            konsen = pr.get("konsen") or {}
+            race_name = pr.get("race_name") or ""
 
             # ---- 結果（上位3）----
             rm_url = build_racemark_url(baba, yyyymmdd, rno)
@@ -949,7 +723,7 @@ def main():
 
             # ---- 注目レースの三連複BOX収支（同着で複数三連複があれば全部加算）----
             bet_box = {"is_focus": False}
-            is_focus = bool(konsen.get("is_focus", False))
+            is_focus = bool((konsen or {}).get("is_focus", False))
             if BET_ENABLED and is_focus:
                 focus_races += 1
 
@@ -973,7 +747,6 @@ def main():
 
                 bet_box = {
                     "is_focus": True,
-                    "threshold": float(KONSEN_FOCUS_TH),
                     "box_n": int(nbox),
                     "bet_unit": int(BET_UNIT),
                     "bet_points": int(pts),
@@ -993,16 +766,16 @@ def main():
                 "result_top3": result_top3,
                 "bet_box": bet_box,
                 "source": {
+                    "predict_json": pred_path,
                     "racemark_url": rm_url,
                     "refundmoney_url": ref_url,
-                    "nar_tablephp_url": nar_tablephp_url(yyyymmdd, str(track_id), str(rno), "1"),
                 }
             })
 
             time.sleep(0.08)
 
-        if track_incomplete:
-            print(f"[SKIP] {track}: indices not usable -> NO OUTPUT")
+        if not races_out:
+            print(f"[SKIP] {track}: no races built (maybe predict json empty)")
             continue
 
         title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 結果"
@@ -1030,17 +803,9 @@ def main():
             "pnl_summary": pnl_summary,
             "pnl_total": pnl_total,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
-            "weights": {"SP_W": SP_W, "KB_W": KB_W, "JOCKEY_W": JOCKEY_W},
-            "konsen_config": {
-                "name": KONSEN_NAME,
-                "gap12_mid": KONSEN_GAP12_MID,
-                "gap15_mid": KONSEN_GAP15_MID,
-                "focus_th": KONSEN_FOCUS_TH,
-            },
             "source": {
-                "kaisekisya_url": jockey_url,
+                "predict_json": pred_path,
                 "refundmoney_url": ref_url,
-                "nar_track_code": track_id,
             }
         }
 
