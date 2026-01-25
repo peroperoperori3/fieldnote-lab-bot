@@ -5,6 +5,11 @@
 #  - SP：吉馬（kichiuma）
 #  - 騎手補正：kaisekisya
 #  - 出力：output/predict_YYYYMMDD_<trackId>.json / .html
+#
+# ★改造ポイント（今回）：
+#  - スコアは「SP / KB / 騎手」をレース内で標準化（Z化）して合成する
+#  - 欠損は「推定 or レース中央値」で補完し、“片方だけデータがある馬”が極端に不利にならないようにする
+#  - 最終指数は xx.xx（小数2桁）で出力
 
 import os, re, json, time, math
 from datetime import datetime
@@ -17,12 +22,21 @@ UA = {"User-Agent": "Mozilla/5.0", "Accept-Language": "ja,en;q=0.8"}
 MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 
 # ===== スコア重み（環境変数で調整可）=====
-# SPをメインにして、NAR平均指数(=base_index)と騎手は補正程度
+# 今回は “同じ土俵で足す” 前提なので、KBもデフォで 1.0 に寄せる
 SP_W = float(os.environ.get("SP_W", "1.0"))
-KB_W = float(os.environ.get("KB_W", "0.10"))     # ← “NAR平均指数” に対する重み
-JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
+KB_W = float(os.environ.get("KB_W", "1.0"))
+JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.4"))
 
-# ===== 混戦度（案3：ギャップ方式 / 環境変数で調整可）=====
+# ===== 正規化設定 =====
+# NORM_METHOD: "z"（平均/標準偏差） or "robust"（中央値/MAD）
+NORM_METHOD = os.environ.get("NORM_METHOD", "z").strip().lower()
+# 最終指数の見た目（スケール）
+# score = SCORE_BASE + SCORE_SCALE * combined_z
+SCORE_BASE = float(os.environ.get("SCORE_BASE", "50.0"))
+SCORE_SCALE = float(os.environ.get("SCORE_SCALE", "10.0"))
+
+# ===== 混戦度（残す：表示用。いらなければ KONSEN_ENABLE=0）=====
+KONSEN_ENABLE = os.environ.get("KONSEN_ENABLE", "1").strip() != "0"
 KONSEN_NAME = os.environ.get("KONSEN_NAME", "混戦度")
 KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
@@ -76,31 +90,25 @@ def _norm_text(s: str) -> str:
 
 def clean_horse_name(raw: str) -> str:
     s = _norm_text(raw)
-
-    # 例: "ソイジャガー 5ヶ月前" / "ソイジャガー 12日前" などを落とす
     s = re.sub(r"\s+\d+\s*(?:日|週|ヶ月|か月|月|年)\s*前.*$", "", s).strip()
-
-    # 括弧注釈が混ざるケース（保険）
     s = re.sub(r"[（(].*?[）)]", "", s).strip()
-
-    # 先頭トークンだけにする保険（馬名は基本スペースが入らない）
     s = s.split(" ")[0].strip()
-
     return s
 
 def clean_race_name(raw: str) -> str:
     s = _norm_text(raw)
 
-    # "1R" 以降（ナビ/時刻/馬場一覧/想定など）を切り捨て
-    s = re.split(r"\b\d{1,2}R\b", s)[0].strip()
+    # 先頭の「8R」「８Ｒ」などを落とす（rno表示は別で付くので）
+    s = re.sub(r"^\s*[0-9０-９]{1,2}\s*[RＲ]\s*", "", s).strip()
 
-    # それでも "»" 等が残る場合
-    s = s.split("»")[0].strip()
+    # パンくず（« »）以降をカット
+    if "«" in s:
+        s = s.split("«")[0].strip()
+    if "»" in s:
+        s = s.split("»")[0].strip()
 
-    # 表記ゆれ整形（お好み）
     s = s.replace("－", "-").replace("―", "-").replace("—", "-")
     s = re.sub(r"\s*-\s*", "-", s).strip()
-
     return s
 
 # ===== HTTP =====
@@ -125,46 +133,32 @@ def fetch(url: str, debug=False, params=None) -> str:
 def keibago_racelist_has_race(html: str) -> bool:
     if not html:
         return False
-    # RaceList は「1R」表記が出ることが多い
     return ("1R" in html) or ("２Ｒ" in html) or ("出馬表" in html)
 
 def nar_tablehtml_url(date: str, track: str, number: str) -> str:
-    # 例: https://nar.k-ba.net/20260122/28/1/table.html
     return f"https://nar.k-ba.net/{date}/{int(track)}/{int(number)}/table.html"
 
 def nar_tablehtml_seems_valid(html: str) -> bool:
     if not html:
         return False
-    # table.html はだいたい「平均指数」や「馬番」が含まれる
     txt = html
-    return ("平均指数" in txt) and (("馬番" in txt) or re.search(r"\b1\s+\S+", BeautifulSoup(html, "lxml").get_text("\n", strip=True) or ""))
+    return ("平均指数" in txt) and (
+        ("馬番" in txt) or re.search(r"\b1\s+\S+", BeautifulSoup(html, "lxml").get_text("\n", strip=True) or "")
+    )
 
 def detect_active_tracks(yyyymmdd: str, debug=False):
-    """
-    取りこぼし対策：
-      1) keiba.go.jp RaceListで検出
-      2) 見つからなかった場は NAR table.html の 1R を叩いて補完（帯広除外）
-    """
     active = []
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
 
-    # 1) keiba.go.jp で判定
     for track, baba in BABA_CODE.items():
         if baba in EXCLUDE_BABA:
             continue
         url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_babaCode={baba}&k_raceDate={date_slash}"
         html = fetch(url, debug=debug)
-        ok = keibago_racelist_has_race(html)
-        if ok:
+        if keibago_racelist_has_race(html):
             active.append(track)
-            if debug:
-                print(f"[ACTIVE:keiba.go.jp] {track} (babaCode={baba})")
-        else:
-            if debug:
-                print(f"[NO:keiba.go.jp] {track} (babaCode={baba})")
         time.sleep(0.08)
 
-    # 2) 補完：keiba.go.jpで落ちるケース（姫路など）対策
     missing = [t for t in BABA_CODE.keys() if t not in active and BABA_CODE[t] not in EXCLUDE_BABA]
     if missing:
         if debug:
@@ -175,15 +169,8 @@ def detect_active_tracks(yyyymmdd: str, debug=False):
             html = fetch(url, debug=debug)
             if nar_tablehtml_seems_valid(html):
                 active.append(track)
-                if debug:
-                    print(f"[ACTIVE:NAR] {track} (track={track_id})")
-            else:
-                if debug:
-                    print(f"[NO:NAR] {track} (track={track_id})")
             time.sleep(0.06)
 
-    # 環境変数で強制追加も可能（保険）
-    # TRACKS_FORCE="姫路,園田" のように
     force = os.environ.get("TRACKS_FORCE", "").strip()
     if force:
         add = [x.strip() for x in force.split(",") if x.strip()]
@@ -261,11 +248,12 @@ def match_jockey_by3(j3: str, stats: dict):
     return None
 
 def jockey_add_points(win: float, quin: float, tri: float) -> float:
+    # 生値（0〜25くらい）想定：勝率/連対/三連対を合成
     raw = win * 0.45 + quin * 0.35 + tri * 0.20
     return raw / 4.0
 
 # =========================================================
-# NAR(table.html) 解析（姫路など table.php が不安定な場対策）
+# NAR(table.html) 解析（table id="table" が無いケース対策）
 # =========================================================
 def parse_nar_race_name(html: str) -> str:
     if not html:
@@ -286,8 +274,8 @@ def parse_nar_race_name(html: str) -> str:
 
 def parse_nar_rows_text_fallback(html: str):
     """
-    nar.k-ba.net の table.html / table.php が <table id="table"> を返さない場合のフォールバック。
-    返り値: [{umaban,name,jockey,avg_index}, ...]
+    返り値: [{umaban,name,jockey,avg_index(Noneありうる)}, ...]
+    avg_index が * の馬も “行は返す” → 後段で中央値補完する
     """
     if not html:
         return []
@@ -300,12 +288,13 @@ def parse_nar_rows_text_fallback(html: str):
     cur = None
 
     re_jockey = re.compile(r"\b\d{1,2}\.\d\b\s+(\S+)\s+\d{3}\b")
+    # "(5)" みたいなカッコの後ろの数値を拾う（最後が平均指数であることが多い）
     re_idx = re.compile(r"\)\s*(\d+(?:\.\d+)?)")
 
     for ln in lines:
         m = re.match(r"^(\d{1,2})\s+(.+)$", ln)
         if m:
-            if cur and (cur.get("avg_index") is not None):
+            if cur:
                 rows.append(cur)
             umaban = int(m.group(1))
             name = clean_horse_name(m.group(2))
@@ -320,19 +309,22 @@ def parse_nar_rows_text_fallback(html: str):
             if mj:
                 cur["jockey"] = re.sub(r"[◀◁▶▷\s]+", "", mj.group(1))
 
+        # 平均指数らしき数値が拾えたら入れる
         if cur["avg_index"] is None:
             nums = re_idx.findall(ln)
             if nums:
-                cur["avg_index"] = float(nums[-1])
+                try:
+                    cur["avg_index"] = float(nums[-1])
+                except Exception:
+                    pass
 
-    if cur and (cur.get("avg_index") is not None):
+    if cur:
         rows.append(cur)
 
-    # それでも薄い場合、最低限のフィルタ
-    rows = [r for r in rows if isinstance(r.get("avg_index"), (int,float)) and r.get("name")]
+    # 最低限：馬名と馬番がある行だけ
+    rows = [r for r in rows if r.get("name") and isinstance(r.get("umaban"), int)]
     return rows
 
-# （保険）table.php を使う場合の既存パーサも残す（table id="table" 形式）
 def norm(s: str) -> str:
     s = str(s).replace("\u3000"," ")
     s = re.sub(r"\s+"," ",s).strip()
@@ -370,7 +362,7 @@ def parse_nar_tablephp_rows(html: str):
         idx_cols = [i for i,h in enumerate(head) if "指数" in h]
         c_avg = max(idx_cols) if idx_cols else None
 
-    if None in (c_umaban, c_name, c_jockey, c_avg):
+    if None in (c_umaban, c_name, c_jockey):
         return []
 
     rows = []
@@ -379,7 +371,7 @@ def parse_nar_tablephp_rows(html: str):
         if not tds:
             continue
         vals = [norm(td.get_text(" ", strip=True)) for td in tds]
-        mx = max(c_umaban, c_name, c_jockey, c_avg)
+        mx = max(c_umaban, c_name, c_jockey, c_avg or 0)
         if len(vals) <= mx:
             continue
 
@@ -390,22 +382,25 @@ def parse_nar_tablephp_rows(html: str):
         name = clean_horse_name(vals[c_name])
         jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[c_jockey])
 
-        mavg = re.search(r"(\d+(?:\.\d+)?)", vals[c_avg])
-        if not mavg:
-            continue
+        avg = None
+        if c_avg is not None and c_avg < len(vals):
+            mavg = re.search(r"(\d+(?:\.\d+)?)", vals[c_avg])
+            if mavg:
+                try:
+                    avg = float(mavg.group(1))
+                except Exception:
+                    avg = None
 
         rows.append({
             "umaban": int(mban.group()),
             "name": name,
             "jockey": jockey,
-            "avg_index": float(mavg.group(1)),
+            "avg_index": avg,
         })
     return rows
 
 def fetch_nar_rows_best(date: str, track_id: int, rno: int, debug=False):
     """
-    まず table.html を取りに行き、取れたらそれを採用。
-    取れない場合のみ table.php を condition=1..4 で試す。
     return: (rows, used_condition, source_url, race_name_from_nar)
     """
     track = str(track_id)
@@ -418,7 +413,6 @@ def fetch_nar_rows_best(date: str, track_id: int, rno: int, debug=False):
         race_name = parse_nar_race_name(html)
         return rows, None, url, race_name
 
-    # 保険：table.php
     for cond in ["1","2","3","4"]:
         html2 = nar_tablephp_html(date, track, number, cond, debug=debug)
         if not html2:
@@ -514,7 +508,6 @@ def find_sp_table(soup: BeautifulSoup):
 def parse_kichiuma_sp(html: str):
     """
     return: (sp_by_umaban: dict[int,float], race_name: str)
-    ※SPが空欄の馬は「辞書に入れない」（＝欠損として推定対象にする）
     """
     soup = BeautifulSoup(html, "lxml")
     meta = parse_kichiuma_race_meta(html)
@@ -571,7 +564,7 @@ def parse_kichiuma_sp(html: str):
 
     return sp_by, clean_race_name(meta.get("race_name", "") or "")
 
-# ===== 混戦度 =====
+# ===== 混戦度（表示用：任意）=====
 def _clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
@@ -602,7 +595,6 @@ def calc_konsen_gap(top5_scores_desc):
 
     konsen01 = 0.65 * sc12 + 0.35 * sc15
     konsen = round(100.0 * _clamp(konsen01, 0.0, 1.0), 1)
-
     is_focus = bool(konsen >= float(KONSEN_FOCUS_TH))
 
     return {
@@ -695,17 +687,17 @@ def render_html(title: str, preds) -> str:
 
         scores_in_race = [float(p.get("score", 0.0)) for p in picks if isinstance(p.get("score", None), (int, float))]
 
-        k = race.get("konsen") or {}
-        kval = k.get("value", None)
-        is_focus = bool(k.get("is_focus", False))
-        kname = k.get("name", KONSEN_NAME)
-
         konsen_badge = ""
-        if isinstance(kval, (int, float)):
-            if is_focus:
-                konsen_badge = badge(f"注目 {kname}{float(kval):.1f}", "#f59e0b", "#ffffff")
-            else:
-                konsen_badge = badge(f"{kname}{float(kval):.1f}", "#6b7280", "#ffffff")
+        if KONSEN_ENABLE:
+            k = race.get("konsen") or {}
+            kval = k.get("value", None)
+            is_focus = bool(k.get("is_focus", False))
+            kname = k.get("name", KONSEN_NAME)
+            if isinstance(kval, (int, float)):
+                if is_focus:
+                    konsen_badge = badge(f"注目 {kname}{float(kval):.1f}", "#f59e0b", "#ffffff")
+                else:
+                    konsen_badge = badge(f"{kname}{float(kval):.1f}", "#6b7280", "#ffffff")
 
         head = f"{rno}R" + (f" {race_name}" if race_name else "")
 
@@ -756,7 +748,72 @@ def render_html(title: str, preds) -> str:
     parts.append("</div>")
     return "\n".join(parts)
 
-# ===== 推定まわり（SP欠損をNAR平均指数で「周りに合わせて」埋める） =====
+# =========================
+# ここから：指数算出（新方式）
+# =========================
+def _median(vals):
+    vals = [v for v in vals if isinstance(v, (int, float)) and not math.isnan(v)]
+    if not vals:
+        return None
+    vals = sorted(vals)
+    n = len(vals)
+    mid = n // 2
+    return vals[mid] if n % 2 == 1 else (vals[mid-1] + vals[mid]) / 2.0
+
+def _mean_std(vals):
+    vals = [v for v in vals if isinstance(v, (int, float)) and not math.isnan(v)]
+    if not vals:
+        return (0.0, 1.0)
+    m = sum(vals) / len(vals)
+    v = sum((x - m) ** 2 for x in vals) / max(1, (len(vals) - 1))
+    sd = math.sqrt(v) if v > 0 else 1.0
+    return (m, sd)
+
+def _mad(vals, med):
+    vals = [v for v in vals if isinstance(v, (int, float)) and not math.isnan(v)]
+    if not vals or med is None:
+        return 1.0
+    dev = [abs(x - med) for x in vals]
+    mad = _median(dev)
+    return mad if (mad and mad > 1e-9) else 1.0
+
+def zscore_values(values, method="z"):
+    """
+    values: list[float or None]
+    return: list[z] (Noneは返さない＝全部 float に揃えて返す)
+    """
+    xs = [v for v in values if isinstance(v, (int, float)) and not math.isnan(v)]
+    if not xs:
+        # 全部欠損なら全部0扱い
+        return [0.0 for _ in values], {"center": 0.0, "scale": 1.0, "method": method}
+
+    if method == "robust":
+        med = _median(xs)
+        mad = _mad(xs, med)
+        # 1.4826 * MAD を “標準偏差相当” に
+        scale = 1.4826 * mad
+        if scale <= 1e-9:
+            scale = 1.0
+        z = []
+        for v in values:
+            if not isinstance(v, (int, float)) or math.isnan(v):
+                z.append(0.0)
+            else:
+                z.append((v - med) / scale)
+        return z, {"center": med, "scale": scale, "method": method}
+
+    # method == "z"
+    mu, sd = _mean_std(xs)
+    if sd <= 1e-9:
+        sd = 1.0
+    z = []
+    for v in values:
+        if not isinstance(v, (int, float)) or math.isnan(v):
+            z.append(0.0)
+        else:
+            z.append((v - mu) / sd)
+    return z, {"center": mu, "scale": sd, "method": method}
+
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
@@ -773,16 +830,17 @@ def fit_linear(xs, ys):
 
 def estimate_sp_factory(rows, debug=False):
     """
-    rows: [{base_index, sp_raw(None可)}...]
+    rows: [{base_index(float or None), sp_raw(None可)}...]
     """
-    pairs = [(r["base_index"], r["sp_raw"]) for r in rows if r["sp_raw"] is not None]
+    pairs = [(r["base_index"], r["sp_raw"]) for r in rows if (r.get("sp_raw") is not None and isinstance(r.get("base_index"), (int, float)))]
     kb_vals = [r["base_index"] for r in rows if isinstance(r.get("base_index"), (int,float))]
 
     kb_min = min(kb_vals) if kb_vals else 0.0
     kb_max = max(kb_vals) if kb_vals else 1.0
 
-    sp_min_obs = min([y for _, y in pairs], default=50.0)
-    sp_max_obs = max([y for _, y in pairs], default=75.0)
+    sp_obs = [y for _, y in pairs]
+    sp_min_obs = min(sp_obs) if sp_obs else 50.0
+    sp_max_obs = max(sp_obs) if sp_obs else 75.0
 
     a_b = None
     if len(pairs) >= 3:
@@ -821,6 +879,84 @@ def estimate_sp_factory(rows, debug=False):
         print(f"[DEBUG] SP-estimator info: {info}")
     return est, info
 
+def compute_scores_new(rows, debug=False):
+    """
+    rows: [{umaban,name,jockey, base_index(None可), jockey_add, sp_raw(None可)}...]
+
+    return: horses_scored list (scoreはfloat 小数2桁)
+    """
+    # 1) base_index の中央値（KB欠損補完）
+    kb_list = [r.get("base_index") for r in rows if isinstance(r.get("base_index"), (int, float))]
+    kb_med = _median(kb_list)
+    if kb_med is None:
+        kb_med = 0.0
+
+    # 2) SP推定器（KBがある馬に対して）
+    est_sp, est_info = estimate_sp_factory(rows, debug=debug)
+
+    # 3) SP（欠損は推定、推定不可は中央値）
+    sp_raw_list = [r.get("sp_raw") for r in rows if isinstance(r.get("sp_raw"), (int, float))]
+    sp_med = _median(sp_raw_list)
+    if sp_med is None:
+        sp_med = 60.0
+
+    for r in rows:
+        if not isinstance(r.get("base_index"), (int, float)):
+            r["base_index_filled"] = float(kb_med)
+        else:
+            r["base_index_filled"] = float(r["base_index"])
+
+        if isinstance(r.get("sp_raw"), (int, float)):
+            r["sp_filled"] = float(r["sp_raw"])
+        else:
+            # 推定：KBがある（filledにしてあるので常に推定可能）
+            try:
+                r["sp_filled"] = float(est_sp(r["base_index_filled"]))
+            except Exception:
+                r["sp_filled"] = float(sp_med)
+
+    # 4) Z化（SP / KB / 騎手）
+    sp_vals = [r["sp_filled"] for r in rows]
+    kb_vals = [r["base_index_filled"] for r in rows]
+    j_vals = [float(r.get("jockey_add", 0.0)) for r in rows]
+
+    z_sp, sp_norm = zscore_values(sp_vals, method=("robust" if NORM_METHOD == "robust" else "z"))
+    z_kb, kb_norm = zscore_values(kb_vals, method=("robust" if NORM_METHOD == "robust" else "z"))
+    z_j,  j_norm  = zscore_values(j_vals,  method=("robust" if NORM_METHOD == "robust" else "z"))
+
+    # 5) 合成 → 表示スケールへ
+    wsum = abs(SP_W) + abs(KB_W) + abs(JOCKEY_W)
+    if wsum <= 1e-9:
+        wsum = 1.0
+
+    horses = []
+    for i, r in enumerate(rows):
+        comb_z = (SP_W * z_sp[i] + KB_W * z_kb[i] + JOCKEY_W * z_j[i]) / wsum
+        score = SCORE_BASE + SCORE_SCALE * comb_z
+
+        horses.append({
+            "umaban": int(r["umaban"]),
+            "name": clean_horse_name(r["name"]),
+            "jockey": r.get("jockey", ""),
+            "sp": float(r["sp_filled"]),
+            "base_index": float(r["base_index_filled"]),
+            "jockey_add": float(r.get("jockey_add", 0.0)),
+            "z": {
+                "sp": float(z_sp[i]),
+                "kb": float(z_kb[i]),
+                "jockey": float(z_j[i]),
+                "combined": float(comb_z),
+                "norm_method": NORM_METHOD,
+            },
+            "score": float(round(score, 2)),
+        })
+
+    if debug:
+        print(f"[DEBUG] norm info: sp={sp_norm} kb={kb_norm} j={j_norm}")
+        print(f"[DEBUG] sp_est_info: {est_info}")
+
+    return horses
+
 # =========================================================
 # main
 # =========================================================
@@ -831,7 +967,11 @@ def main():
 
     print(f"[INFO] DATE={yyyymmdd}")
     print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
-    print(f"[INFO] KONSEN name={KONSEN_NAME} gap12_mid={KONSEN_GAP12_MID} gap15_mid={KONSEN_GAP15_MID} focus_th={KONSEN_FOCUS_TH}")
+    print(f"[INFO] NORM_METHOD={NORM_METHOD} SCORE_BASE={SCORE_BASE} SCORE_SCALE={SCORE_SCALE}")
+    if KONSEN_ENABLE:
+        print(f"[INFO] KONSEN name={KONSEN_NAME} gap12_mid={KONSEN_GAP12_MID} gap15_mid={KONSEN_GAP15_MID} focus_th={KONSEN_FOCUS_TH}")
+    else:
+        print("[INFO] KONSEN disabled")
 
     active = detect_active_tracks(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
@@ -845,21 +985,16 @@ def main():
             print(f"[SKIP] {track}: excluded")
             continue
 
-        # ---- 騎手成績 ----
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
         jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
 
         preds = []
         track_incomplete = False
-
-        # レース数は最大12想定で「取れたレースだけ採用」
-        nar_missing_streak = 0  # 連続でNARが取れない=開催終了っぽい判定に使う
+        nar_missing_streak = 0
 
         for rno in range(1, 13):
-            # ---- NAR 平均指数（base_index）----
             nar_rows, used_cond, nar_src, race_name_from_nar = fetch_nar_rows_best(yyyymmdd, track_id, rno, debug=False)
 
-            # ★修正：欠損レースは「データ不足」でスキップし、次のレースへ（1Rだけは場まるごとNG）
             if not nar_rows:
                 if rno == 1:
                     print(f"[SKIP] {track}: NAR rows not found (rno=1) -> NO OUTPUT")
@@ -867,7 +1002,6 @@ def main():
                     break
                 nar_missing_streak += 1
                 print(f"[SKIP] {track} {rno}R: データ不足（NAR指数なし） -> skip race")
-                # 連続で取れないなら開催終了っぽいので終了
                 if nar_missing_streak >= 2:
                     if debug:
                         print(f"[INFO] {track}: stop at {rno}R (NAR missing streak={nar_missing_streak})")
@@ -876,95 +1010,63 @@ def main():
             else:
                 nar_missing_streak = 0
 
-            # ---- 吉馬 SP ----
             fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, int(rno))
             fp_html = fetch(fp_url, debug=False)
-
-            # ★修正：吉馬が取れない場合も「レーススキップ」（場まるごと中断しない）
             if not fp_html:
                 print(f"[SKIP] {track} {rno}R: データ不足（吉馬SP取得失敗） -> skip race")
                 continue
 
             sp_by_umaban, race_name_kichiuma = parse_kichiuma_sp(fp_html)
 
-            # ★レース名は「吉馬→NAR」順に使い、どちらも clean
             race_name = clean_race_name(race_name_kichiuma) if race_name_kichiuma else ""
             if not race_name:
                 race_name = clean_race_name(race_name_from_nar) if race_name_from_nar else ""
 
-            # rows を “共通フォーマット” に（avg_index欠損の馬は除外）
+            # rows（欠損avg_indexも保持して後段で中央値補完）
             rows = []
             for h in nar_rows:
                 try:
                     u = int(h.get("umaban"))
-                    base = float(h.get("avg_index"))   # NAR平均指数を base_index として採用
                 except Exception:
                     continue
 
-                j = h.get("jockey", "") or ""
+                base = h.get("avg_index", None)
+                if isinstance(base, (int, float)):
+                    base_val = float(base)
+                else:
+                    base_val = None  # 欠損
 
+                j = h.get("jockey", "") or ""
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
                 add = jockey_add_points(*rates) if rates else 0.0
 
-                sp = sp_by_umaban.get(u)
-
+                sp = sp_by_umaban.get(u)  # Noneあり
                 rows.append({
                     "umaban": u,
                     "name": clean_horse_name(h.get("name", "")),
                     "jockey": j,
-                    "base_index": base,
+                    "base_index": base_val,          # Noneあり
                     "jockey_add": float(add),
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
-            # ★修正：有効データ不足のレースはスキップ
+            # 最低限：馬が少なすぎるレースはやめる
             if len(rows) < 5:
-                print(f"[SKIP] {track} {rno}R: データ不足（有効馬<5） -> skip race")
+                print(f"[SKIP] {track} {rno}R: データ不足（出走馬<5） -> skip race")
                 continue
 
-            est_sp, _ = estimate_sp_factory(rows, debug=False)
+            horses_scored = compute_scores_new(rows, debug=debug)
 
-            for r in rows:
-                if r["sp_raw"] is None:
-                    r["sp_est"] = float(est_sp(r["base_index"]))
-                else:
-                    r["sp_est"] = float(r["sp_raw"])
-
-            horses_scored = []
-            for r in rows:
-                sp = float(r["sp_est"])
-                base = float(r["base_index"])
-                add = float(r["jockey_add"])
-                score = (SP_W * sp) + (KB_W * base) + (JOCKEY_W * add)
-
-                horses_scored.append({
-                    "umaban": int(r["umaban"]),
-                    "name": clean_horse_name(r["name"]),
-                    "jockey": r.get("jockey", ""),
-                    "sp": sp,
-                    "base_index": base,
-                    "jockey_add": add,
-                    "score": float(score),
-                    "source": {
-                        "kichiuma_fp_url": fp_url,
-                        "nar_table_url": nar_src,
-                        "nar_condition": used_cond,
-                    },
-                })
-
-            # ★修正：採点できた馬が少ないレースもスキップ
-            if len(horses_scored) < 5:
-                print(f"[SKIP] {track} {rno}R: データ不足（採点馬<5） -> skip race")
-                continue
-
+            # スコアでソート（同点はSP→KB→馬番）
             horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
             top5 = horses_scored[:5]
 
-            top5_scores = [float(h["score"]) for h in top5]
-            konsen = calc_konsen_gap(top5_scores)
-
-            if KONSEN_DEBUG:
-                print(f"[KONSEN] {track} {rno}R top5_scores={list(map(lambda v: round(v,2), top5_scores))} konsen={konsen}")
+            konsen = None
+            if KONSEN_ENABLE and len(top5) >= 5:
+                top5_scores = [float(h["score"]) for h in top5]
+                konsen = calc_konsen_gap(top5_scores)
+                if KONSEN_DEBUG:
+                    print(f"[KONSEN] {track} {rno}R top5_scores={top5_scores} konsen={konsen}")
 
             picks = []
             for j, hh in enumerate(top5):
@@ -972,21 +1074,31 @@ def main():
                     "mark": MARKS5[j],
                     "umaban": int(hh["umaban"]),
                     "name": clean_horse_name(hh["name"]),
-                    "score": float(hh["score"]),
+                    "score": float(hh["score"]),               # ★小数2桁
                     "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
                     "jockey": hh.get("jockey", ""),
                     "jockey_add": float(hh["jockey_add"]),
-                    "source": hh.get("source", {}),
+                    "z": hh.get("z", {}),
+                    "source": {
+                        "kichiuma_fp_url": fp_url,
+                        "nar_table_url": nar_src,
+                        "nar_condition": used_cond,
+                    },
                 })
 
-            preds.append({
+            payload = {
                 "race_no": int(rno),
                 "race_name": race_name,
                 "picks": picks,
-                "konsen": konsen,
-            })
+            }
+            if KONSEN_ENABLE:
+                payload["konsen"] = (konsen or {
+                    "name": KONSEN_NAME, "value": 0.0, "is_focus": False,
+                    "gap12": None, "gap15": None, "gap12_mid": KONSEN_GAP12_MID, "gap15_mid": KONSEN_GAP15_MID, "focus_th": KONSEN_FOCUS_TH
+                })
 
+            preds.append(payload)
             time.sleep(0.05)
 
         if track_incomplete:
@@ -1005,7 +1117,15 @@ def main():
             "predictions": preds,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "weights": {"SP_W": SP_W, "KB_W": KB_W, "JOCKEY_W": JOCKEY_W},
+            "scoring": {
+                "method": "zscore_composite",
+                "norm_method": NORM_METHOD,
+                "score_base": SCORE_BASE,
+                "score_scale": SCORE_SCALE,
+                "notes": "SP/KB/騎手をレース内で標準化（Z化）し、欠損は推定 or レース中央値で補完して合成",
+            },
             "konsen_config": {
+                "enabled": KONSEN_ENABLE,
                 "name": KONSEN_NAME,
                 "gap12_mid": KONSEN_GAP12_MID,
                 "gap15_mid": KONSEN_GAP15_MID,
