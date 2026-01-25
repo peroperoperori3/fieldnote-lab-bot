@@ -1,13 +1,7 @@
-# result_all_today.py  (fieldnote-lab-bot)  最終版
-# 目的：
-# - keibablood（指数）+ kichiuma（SP）+ kaisekisya（騎手）で上位5頭を作る
-# - keiba.go.jp RaceMarkTable から結果(1-3着)を取得
-# - 払戻は RefundMoneyList から「三連複」をレース別に取得（同着で複数行OK）
-#   ただし「取れない/変な時」だけ RaceMarkTable から保険抽出（誤爆防止付き）
-# - 注目レース（混戦度>=閾値）のみ三連複BOX(上位N頭)の収支を計算
-# - output/ に結果HTML/JSON と pnl_total.json（累計/トップページ用）を出力
-#
-# ★ファイル名は日本語をやめて、keibabloodコード（例：船橋=43）で保存する（文字化け対策）
+# result_all_today.py  (fieldnote-lab-bot)  NAR(table.php)対応版
+# 変更点：
+# - 予想の元データを keibablood/kichiuma から NAR(table.php) の「平均指数」に切替
+# - keiba.go.jp の結果/払戻/PNL/HTML/JSON構造は極力維持
 
 import os, re, json, time
 from datetime import datetime
@@ -101,7 +95,7 @@ BABA_CODE = {
   "金沢": 22, "笠松": 23, "名古屋": 24, "園田": 27, "姫路": 28, "高知": 31, "佐賀": 32,
 }
 
-# keibablood 開催場コード（実績ベース）
+# ★出力ファイル名用（従来どおり keibabloodコードを維持）
 KEIBABLOOD_CODE = {
   "門別": "30","盛岡": "35","水沢": "36","浦和": "42","船橋": "43","大井": "44","川崎": "45",
   "金沢": "46","笠松": "47","名古屋": "48","園田": "50","姫路": "51","高知": "54","佐賀": "55",
@@ -260,256 +254,109 @@ def jockey_add_points(win: float, quin: float, tri: float) -> float:
     return raw / 4.0
 
 
-# ====== keibablood（指数表 + 騎手） ======
-def parse_keibablood_tables(html: str):
-    soup = BeautifulSoup(html, "lxml")
-    races = {}
-
-    for t in soup.find_all("table"):
-        head = t.find("tr")
-        if not head:
-            continue
-        headers = [c.get_text(" ", strip=True) for c in head.find_all(["th","td"])]
-        hj = " ".join(headers)
-
-        if not (("指数" in hj) and ("馬名" in hj) and ("番" in hj)):
-            continue
-
-        def idx(k):
-            for i,h in enumerate(headers):
-                if k in h:
-                    return i
-            return None
-
-        i_ban, i_name, i_idx, i_jok = idx("番"), idx("馬名"), idx("指数"), idx("騎手")
-        if None in (i_ban, i_name, i_idx):
-            continue
-
-        rno = len(races) + 1
-        rows = []
-        for tr in t.find_all("tr")[1:]:
-            cells = tr.find_all(["td","th"])
-            if not cells:
-                continue
-            vals = [c.get_text(" ", strip=True) for c in cells]
-
-            max_need = max(i_ban, i_name, i_idx, (i_jok or 0))
-            if len(vals) <= max_need:
-                if len(vals) <= max(i_ban, i_name, i_idx):
-                    continue
-
-            mban = re.search(r"\d+", vals[i_ban])
-            midx = re.search(r"[\d.]+", vals[i_idx])
-            if not (mban and midx):
-                continue
-
-            jockey = ""
-            if i_jok is not None and i_jok < len(vals):
-                jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[i_jok])
-
-            rows.append({
-                "umaban": int(mban.group()),
-                "name": vals[i_name].strip(),
-                "base_index": float(midx.group()),
-                "jockey": jockey,
-            })
-
-        if rows:
-            races[rno] = rows
-
-    return races
-
-
-# ====== 吉馬（SP能力値） ======
-def build_kichiuma_fp_url(yyyymmdd: str, track_id: int, race_no: int) -> str:
-    date_slash = f"{yyyymmdd[:4]}/{int(yyyymmdd[4:6])}/{int(yyyymmdd[6:8])}"
-    date_enc = date_slash.replace("/", "%2F")
-    race_id = f"{yyyymmdd}{race_no:02d}{track_id:02d}"
-    return (
-        "https://www.kichiuma-chiho.net/php/search.php"
-        f"?race_id={race_id}&date={date_enc}&no={race_no}&id={track_id}&p=fp"
-    )
-
-def _norm(s: str) -> str:
+# =========================
+# ★NAR table.php（平均指数）取得
+# =========================
+def _norm_text(s: str) -> str:
     s = str(s).replace("\u3000", " ")
-    s = re.sub(r"\s+", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
-def parse_kichiuma_race_meta(html: str):
-    soup = BeautifulSoup(html, "lxml")
-    text = soup.get_text("\n", strip=True)
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+def nar_tablephp_url(date: str, track: str, number: str, condition: str = "1") -> str:
+    # https://nar.k-ba.net/table.php?date=20260125&track=31&number=1&condition=1
+    return f"https://nar.k-ba.net/table.php?date={date}&track={track}&number={number}&condition={condition}"
 
-    title_line = ""
+def fetch_nar_tablephp(date: str, track: str, number: str, condition: str = "1", debug=False) -> str:
+    url = "https://nar.k-ba.net/table.php"
+    params = {"date": date, "track": track, "number": number, "condition": condition}
+    try:
+        r = requests.get(url, params=params, headers=UA, timeout=25)
+    except Exception as e:
+        if debug:
+            print(f"[GET] {url} params={params} ERROR={e}")
+        return ""
+    if debug:
+        print(f"[GET] {r.url} status={r.status_code} bytes={len(r.content)}")
+    if r.status_code != 200:
+        return ""
+    r.encoding = r.apparent_encoding
+    return r.text
+
+def parse_nar_tablephp(html: str):
+    """
+    return: (rows, race_name)
+      rows: [{"umaban":1,"name":"...","jockey":"...","avg_index":56.0}, ...]
+      race_name: h3見出し等（取れなければ空）
+    """
+    if not html:
+        return [], ""
+
+    soup = BeautifulSoup(html, "lxml")
+
+    # レース名/条件クラス：ページ内の <h3> がそれっぽい（例: ３歳－５）
     race_name = ""
-    for ln in lines:
-        if re.search(r"\d{4}年\d{2}月\d{2}日.*?競馬.*?第\d+競走", ln):
-            title_line = ln
-            break
+    h3 = soup.find("h3")
+    if h3:
+        race_name = _norm_text(h3.get_text(" ", strip=True))
 
-    idx5 = None
-    for i, ln in enumerate(lines):
-        if "(5着)" in ln:
-            idx5 = i
-            break
-    if idx5 is not None and idx5 + 1 < len(lines):
-        race_name = lines[idx5 + 1]
-    return {"title_line": title_line, "race_name": race_name}
-
-def find_sp_table(soup: BeautifulSoup):
-    best = None
-    best_score = -1
-    for t in soup.find_all("table"):
-        trs = t.find_all("tr")
-        if len(trs) < 2:
-            continue
-
-        head_cells = trs[0].find_all(["th","td"])
-        if not head_cells:
-            continue
-
-        headers = [_norm(c.get_text(" ", strip=True)) for c in head_cells]
-        hdr_join = " ".join(headers)
-
-        score = 0
-        if "SP能力値" in hdr_join: score += 5
-        if "競走馬名" in hdr_join: score += 3
-        if "先行力" in hdr_join: score += 2
-        if "末脚力" in hdr_join: score += 2
-        if "SP信頼" in hdr_join: score += 1
-        if "SP調整" in hdr_join: score += 1
-        if "SP最大" in hdr_join: score += 1
-        if "評価" in hdr_join: score += 1
-        if "馬" in hdr_join: score += 1
-
-        row2 = trs[1].find_all(["td","th"])
-        if row2:
-            first = _norm(row2[0].get_text(" ", strip=True))
-            if re.fullmatch(r"\d{1,2}", first):
-                score += 3
-
-        if score > best_score:
-            best_score = score
-            best = t
-
-    return best if (best and best_score >= 8) else None
-
-def parse_kichiuma_sp(html: str):
-    soup = BeautifulSoup(html, "lxml")
-    meta = parse_kichiuma_race_meta(html)
-
-    t = find_sp_table(soup)
+    t = soup.find("table", id="table")
     if not t:
-        return {}, meta.get("race_name", "")
+        return [], race_name
 
     trs = t.find_all("tr")
-    headers_raw = [c.get_text(" ", strip=True) for c in trs[0].find_all(["th","td"])]
-    headers = [_norm(h) for h in headers_raw]
+    if len(trs) < 2:
+        return [], race_name
 
-    def find_col_exact(key_norm):
-        for i, h in enumerate(headers):
-            if h == key_norm:
-                return i
+    head = [_norm_text(c.get_text(" ", strip=True)) for c in trs[0].find_all(["th","td"])]
+
+    def find_col(keys):
+        for i, h in enumerate(head):
+            for k in keys:
+                if k in h:
+                    return i
         return None
 
-    c_umaban = find_col_exact("馬") or 0
-    c_sp = find_col_exact("SP能力値")
-    if c_sp is None:
-        for i in range(len(headers) - 1):
-            if headers[i] == "SP" and headers[i+1] == "能力値":
-                c_sp = i
-                break
-    if c_sp is None:
-        return {}, meta.get("race_name", "")
+    c_umaban = find_col(["馬番", "馬", "番"])
+    c_name   = find_col(["馬名"])
+    c_jockey = find_col(["騎手"])
 
-    sp_by = {}
+    c_avg    = find_col(["平均指数"])
+    if c_avg is None:
+        idx_cols = [i for i, h in enumerate(head) if "指数" in h]
+        c_avg = max(idx_cols) if idx_cols else None
+
+    if None in (c_umaban, c_name, c_jockey, c_avg):
+        return [], race_name
+
+    rows = []
     for tr in trs[1:]:
-        cells = tr.find_all(["td","th"])
-        if not cells:
+        tds = tr.find_all(["td","th"])
+        if not tds:
             continue
-        vals = [c.get_text(" ", strip=True) for c in cells]
-        if len(vals) <= max(c_umaban, c_sp):
-            continue
-
-        b = _norm(vals[c_umaban])
-        if not re.fullmatch(r"\d{1,2}", b):
-            continue
-        umaban = int(b)
-        if not (1 <= umaban <= 18):
+        vals = [_norm_text(td.get_text(" ", strip=True)) for td in tds]
+        mx = max(c_umaban, c_name, c_jockey, c_avg)
+        if len(vals) <= mx:
             continue
 
-        cell = str(vals[c_sp]).strip()
-        if cell == "" or cell in {"-", "—", "―"}:
+        mban = re.search(r"\d{1,2}", vals[c_umaban])
+        if not mban:
             continue
-        msp = re.search(r"(\d+(?:\.\d+)?)", cell)
-        if not msp:
+
+        name = vals[c_name].strip()
+        jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[c_jockey])
+
+        mavg = re.search(r"(\d+(?:\.\d+)?)", vals[c_avg])
+        if not mavg:
             continue
-        sp_by[umaban] = float(msp.group(1))
 
-    return sp_by, meta.get("race_name", "")
+        rows.append({
+            "umaban": int(mban.group()),
+            "name": name,
+            "jockey": jockey,
+            "avg_index": float(mavg.group(1)),
+        })
 
-
-# ===== 推定（SP欠損をKBで埋める）=====
-def clamp(x, lo, hi):
-    return max(lo, min(hi, x))
-
-def fit_linear(xs, ys):
-    n = len(xs)
-    mx = sum(xs) / n
-    my = sum(ys) / n
-    denom = sum((x - mx) ** 2 for x in xs)
-    if denom == 0:
-        return None
-    a = sum((xs[i] - mx) * (ys[i] - my) for i in range(n)) / denom
-    b = my - a * mx
-    return a, b
-
-def estimate_sp_factory(rows, debug=False):
-    pairs = [(r["base_index"], r["sp_raw"]) for r in rows if r["sp_raw"] is not None]
-    kb_vals = [r["base_index"] for r in rows if isinstance(r.get("base_index"), (int,float))]
-
-    kb_min = min(kb_vals) if kb_vals else 0.0
-    kb_max = max(kb_vals) if kb_vals else 1.0
-
-    sp_min_obs = min([y for _, y in pairs], default=50.0)
-    sp_max_obs = max([y for _, y in pairs], default=75.0)
-
-    a_b = None
-    if len(pairs) >= 3:
-        xs = [x for x, _ in pairs]
-        ys = [y for _, y in pairs]
-        a_b = fit_linear(xs, ys)
-
-    def est(base_index: float) -> float:
-        if a_b is not None:
-            a, b = a_b
-            v = a * base_index + b
-            return clamp(v, sp_min_obs - 2.0, sp_max_obs + 2.0)
-
-        if len(pairs) >= 1:
-            sp_med = sorted([y for _, y in pairs])[len(pairs) // 2]
-            kb_med = sorted([x for x, _ in pairs])[len(pairs) // 2]
-            v = base_index + (sp_med - kb_med)
-            return clamp(v, 45.0, 78.0)
-
-        if kb_max == kb_min:
-            return 62.0
-        t = (base_index - kb_min) / (kb_max - kb_min)
-        v = 55.0 + t * 15.0
-        return clamp(v, 45.0, 78.0)
-
-    info = {
-        "pairs_n": len(pairs),
-        "has_linear": (a_b is not None),
-        "linear": a_b,
-        "kb_min": kb_min,
-        "kb_max": kb_max,
-        "sp_min_obs": sp_min_obs,
-        "sp_max_obs": sp_max_obs,
-    }
-    if debug:
-        print(f"[DEBUG] SP-estimator info: {info}")
-    return est, info
+    return rows, race_name
 
 
 # ====== keiba.go.jp 結果（RaceMarkTable）上位3 ======
@@ -560,10 +407,6 @@ def _norm_combo(s: str):
     return s
 
 def parse_refundmoney_sanrenpuku_by_race(html_text: str):
-    """
-    return: dict[int, list[{"combo":"7-8-10","payout":1180}]]
-      race_no -> 三連複の行を全部（同着などで複数ある場合は複数）
-    """
     soup = BeautifulSoup(html_text, "lxml")
     txt = soup.get_text("\n", strip=True)
     lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
@@ -615,12 +458,6 @@ def parse_refundmoney_sanrenpuku_by_race(html_text: str):
 
 # ====== 保険：RaceMarkTableから三連複だけをDOM抽出（誤爆防止） ======
 def parse_sanrenpuku_refunds_from_racemark_dom(html_text: str):
-    """
-    RaceMarkTable の中から「三連複」の行だけをDOMベースで拾う保険。
-    - 「三連複」を含む行(tr)を探す
-    - その行のテキストから「a-b-c」と「xxxx円」を抽出
-    - 異常値(>500000など)は捨てる
-    """
     if not html_text:
         return []
 
@@ -681,11 +518,6 @@ def comb3_count(n: int) -> int:
     return (n * (n - 1) * (n - 2)) // 6
 
 def box_hit_payout(top_umaban_list, sanrenpuku_rows):
-    """
-    top_umaban_list: [馬番...]
-    sanrenpuku_rows: [{"combo":"7-8-10","payout":1180}, ...] ※同着で複数あり得る
-    return: (hit:bool, payout_total:int, hit_combos:list[str])
-    """
     s = set(int(x) for x in top_umaban_list if str(x).isdigit() or isinstance(x, int))
     payout_total = 0
     hit_combos = []
@@ -711,13 +543,12 @@ def build_racemark_url(baba: int, yyyymmdd: str, rno: int):
     )
 
 
-# ====== HTML（予想の相対色分けロジック + 混戦度バッジ + 収支サマリ） ======
+# ====== HTML（あなたの現行をそのまま） ======
 def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
     import html as _html
 
     def esc(s): return _html.escape(str(s))
 
-    # ---- 予想と同じ「相対色分け」ユーティリティ ----
     def _clamp01(x: float) -> float:
         return max(0.0, min(1.0, x))
 
@@ -736,8 +567,8 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
         r, g, b = rgb
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
-    LO = (239, 246, 255)  # #eff6ff
-    HI = (29, 78, 216)    # #1d4ed8
+    LO = (239, 246, 255)
+    HI = (29, 78, 216)
 
     def score_style(sc: float, scores_in_race):
         if not scores_in_race:
@@ -776,7 +607,6 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
 
-    # ===== 収支サマリ =====
     if pnl_summary:
         invest = int(pnl_summary.get("invest", 0) or 0)
         payout = int(pnl_summary.get("payout", 0) or 0)
@@ -957,19 +787,18 @@ def main():
     print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
     print(f"[INFO] KONSEN name={KONSEN_NAME} gap12_mid={KONSEN_GAP12_MID} gap15_mid={KONSEN_GAP15_MID} focus_th={KONSEN_FOCUS_TH}")
     print(f"[INFO] BET enabled={BET_ENABLED} bet_unit={BET_UNIT} box_n={BET_BOX_N}")
+    print(f"[INFO] SOURCE = NAR table.php (avg_index) + kaisekisya(jockey) + keiba.go.jp(result/refund)")
 
     active = detect_active_tracks_keibago(yyyymmdd, debug=DEBUG)
     print(f"[INFO] active_tracks = {active}")
-
-    SERIES_ORDER = [2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     # ===== 累計PnL（1回だけ読み込む）=====
     pnl_total = load_pnl_total(PNL_FILE)
 
     for track in active:
         baba = BABA_CODE.get(track)
-        track_id = BABA_CODE.get(track)
-        place_code = KEIBABLOOD_CODE.get(track)  # ★ファイル名にも使う（日本語回避）
+        track_id = BABA_CODE.get(track)  # ★NARのtrackもこれを使う（あなたの検証通り）
+        place_code = KEIBABLOOD_CODE.get(track)  # ★ファイル名（従来どおり）
         if not baba or not track_id or not place_code:
             print(f"[SKIP] {track}: code missing")
             continue
@@ -977,30 +806,6 @@ def main():
         # ---- 騎手成績 ----
         jockey_url = KAISEKISYA_JOCKEY_URL.get(track, "")
         jockey_stats = parse_kaisekisya_jockey_table(fetch(jockey_url, debug=False)) if jockey_url else {}
-
-        # ---- keibablood 取得 ----
-        picked_url = None
-        used_series = None
-        kb_races = None
-
-        for i in SERIES_ORDER:
-            kb_url = f"https://keibablood.com/{yyyymmdd}{place_code}-{i}/"
-            kb_html = fetch(kb_url, debug=DEBUG)
-            if not kb_html:
-                continue
-            races = parse_keibablood_tables(kb_html)
-            if not races:
-                if DEBUG:
-                    print(f"[MISS] {track} series=-{i} : tables not found")
-                continue
-            picked_url = kb_url
-            used_series = i
-            kb_races = races
-            break
-
-        if not kb_races:
-            print(f"[SKIP] {track}: keibablood 未発見（-2優先で探索済み）")
-            continue
 
         # ---- 払戻（当日払戻金）を先にまとめて取得（同着対応） ----
         ref_url = refundmoney_url(baba, yyyymmdd)
@@ -1018,62 +823,54 @@ def main():
         payout_sum = 0
         hits_sum = 0
 
-        for rno in sorted(kb_races.keys()):
-            rno = int(rno)
+        # ★地方は最大12R想定（足りなければ途中でbreak）
+        miss_streak = 0
+        for rno in range(1, 13):
+            # ---- NAR 平均指数（table.php）取得 ----
+            nar_html = fetch_nar_tablephp(
+                date=yyyymmdd,
+                track=str(track_id),
+                number=str(rno),
+                condition="1",  # 良（まずは固定：必要なら後で条件自動推定も可能）
+                debug=False
+            )
+            nar_rows, race_name = parse_nar_tablephp(nar_html)
 
-            # ---- 吉馬取得（レース名用 + SP推定用）----
-            fp_url = build_kichiuma_fp_url(yyyymmdd, track_id, rno)
-            fp_html = fetch(fp_url, debug=False)
-            if not fp_html:
-                print(f"[SKIP] {track} {rno}R: kichiuma fetch failed -> skip track")
-                track_incomplete = True
-                break
+            if not nar_rows or len(nar_rows) < 5:
+                miss_streak += 1
+                if DEBUG:
+                    print(f"[MISS] {track} {rno}R nar_rows={len(nar_rows)} -> skip")
+                # 連続で取れないなら終了（例：その日9Rまで）
+                if miss_streak >= 2 and rno >= 8:
+                    break
+                continue
+            miss_streak = 0
 
-            sp_by_umaban, race_name = parse_kichiuma_sp(fp_html)
-
-            # ---- KB側の馬リスト作成（SP欠損は None）----
-            rows = []
-            for h in kb_races[rno]:
+            # ---- スコア計算（平均指数 + 騎手補正）----
+            horses_scored = []
+            for h in nar_rows:
                 u = int(h["umaban"])
-                base = float(h["base_index"])
+                base = float(h["avg_index"])  # 平均指数
                 j = h.get("jockey", "")
 
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
                 add = jockey_add_points(*rates) if rates else 0.0
 
-                sp = sp_by_umaban.get(u)
-
-                rows.append({
-                    "umaban": u,
-                    "name": h["name"],
-                    "jockey": j,
-                    "base_index": base,
-                    "jockey_add": float(add),
-                    "sp_raw": (float(sp) if sp is not None else None),
-                })
-
-            # ---- SP推定器を作成して欠損を埋める ----
-            est_sp, _ = estimate_sp_factory(rows, debug=False)
-            for r in rows:
-                r["sp_est"] = float(est_sp(r["base_index"])) if r["sp_raw"] is None else float(r["sp_raw"])
-
-            # ---- スコア計算 ----
-            horses_scored = []
-            for r in rows:
-                sp = float(r["sp_est"])
-                base = float(r["base_index"])
-                add = float(r["jockey_add"])
+                # ★「SP」として平均指数を使う（最小変更）
+                sp = base
                 score = (SP_W * sp) + (KB_W * base) + (JOCKEY_W * add)
 
                 horses_scored.append({
-                    "umaban": int(r["umaban"]),
-                    "name": r["name"],
-                    "jockey": r.get("jockey", ""),
-                    "sp": sp,
-                    "base_index": base,
-                    "jockey_add": add,
+                    "umaban": u,
+                    "name": h.get("name", ""),
+                    "jockey": j,
+                    "sp": float(sp),
+                    "base_index": float(base),
+                    "jockey_add": float(add),
                     "score": float(score),
-                    "source": {"kichiuma_fp_url": fp_url},
+                    "source": {
+                        "nar_tablephp_url": nar_tablephp_url(yyyymmdd, str(track_id), str(rno), "1")
+                    },
                 })
 
             if len(horses_scored) < 5:
@@ -1139,15 +936,14 @@ def main():
                 invest = pts * BET_UNIT
 
                 top_umaban = [p["umaban"] for p in pred_top5[:nbox]]
-                hit, payout100, combos = box_hit_payout(top_umaban, san)  # payoutは「100円あたり」
-                payout = int(payout100 * (BET_UNIT / 100.0))  # BET_UNITが100以外でも対応
+                hit, payout100, combos = box_hit_payout(top_umaban, san)
+                payout = int(payout100 * (BET_UNIT / 100.0))
                 profit = int(payout) - int(invest)
 
                 invest_sum += int(invest)
                 payout_sum += int(payout)
                 hits_sum += (1 if hit else 0)
 
-                # ====== ★累計PNLもここで更新する（これが重要）=====
                 pnl_total["races"] = int(pnl_total.get("races", 0) or 0) + 1
                 pnl_total["hits"]  = int(pnl_total.get("hits", 0) or 0) + (1 if hit else 0)
                 pnl_total["invest"] = int(pnl_total.get("invest", 0) or 0) + int(invest)
@@ -1176,8 +972,8 @@ def main():
                 "bet_box": bet_box,
                 "source": {
                     "racemark_url": rm_url,
-                    "kichiuma_fp_url": fp_url,
                     "refundmoney_url": ref_url,
+                    "nar_tablephp_url": nar_tablephp_url(yyyymmdd, str(track_id), str(rno), "1"),
                 }
             })
 
@@ -1220,21 +1016,19 @@ def main():
                 "focus_th": KONSEN_FOCUS_TH,
             },
             "source": {
-                "keibablood_url": picked_url,
-                "keibablood_series_used": used_series,
                 "kaisekisya_url": jockey_url,
                 "refundmoney_url": ref_url,
+                "nar_track_code": track_id,
             }
         }
 
-        # ★日本語ファイル名をやめる（place_codeで保存）
         json_path = Path("output") / f"result_{yyyymmdd}_{place_code}.json"
         html_path = Path("output") / f"result_{yyyymmdd}_{place_code}.html"
 
         json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
         html_path.write_text(render_result_html(title, races_out, pnl_summary), encoding="utf-8")
 
-        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (keibablood=-{used_series})  focus={focus_races} hits={hits_sum} profit={profit_sum:+,}円")
+        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  focus={focus_races} hits={hits_sum} profit={profit_sum:+,}円")
 
     # ===== 最後に累計を整形して保存 =====
     invest = int(pnl_total.get("invest", 0) or 0)
