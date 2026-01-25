@@ -4,14 +4,18 @@
 # やり方：
 # - result 側では指数の再計算をやめて、predict が出力した JSON（predict_YYYYMMDD_XX.json）を読み込んで使う
 #
+# 追加（今回）：
+# - 全レースの「的中率」を集計（1,2,3着が“予想上位5頭”に全部入ってたら的中）
+# - 結果HTMLに「的中 / 不適中」バッジを表示（欠損は表示なし）
+# - output/pnl_total.json に pred_hit_* を追加
+#
 # 出力：
 # - output/result_YYYYMMDD_<track>.json / .html
-# - output/pnl_total.json（収支まとめ：全開催場の合算）
+# - output/pnl_total.json（収支まとめ：全開催場の合算 + 予想的中率）
 
 import os
 import re
 import json
-import math
 import time
 from datetime import datetime
 from pathlib import Path
@@ -55,7 +59,10 @@ BABA_CODE = {
 }
 EXCLUDE_BABA = {3}  # 帯広ばんえい
 
-# ===== keiba.go.jp から結果を取る =====
+
+# =========================
+# HTTP / 開催検出
+# =========================
 def fetch(url: str, debug=False, params=None) -> str:
     try:
         r = requests.get(url, headers=UA, params=params, timeout=25)
@@ -89,6 +96,10 @@ def detect_active_tracks(yyyymmdd: str, debug=False):
         time.sleep(0.08)
     return active
 
+
+# =========================
+# 結果ページ解析（top3 + 払戻）
+# =========================
 def find_result_table(soup: BeautifulSoup):
     # もっともそれっぽいテーブルを探す（払い戻し/着順の表）
     best = None
@@ -122,43 +133,54 @@ def parse_result_race(html: str):
     top3 = []
     if t:
         trs = t.find_all("tr")
-        # ヘッダ行から列を推測
-        head = [c.get_text(" ", strip=True) for c in trs[0].find_all(["th","td"])]
-        def find_col(keys):
-            for i,h in enumerate(head):
-                for k in keys:
-                    if k in h:
-                        return i
-            return None
-        c_rank = find_col(["着順","着"])
-        c_umaban = find_col(["馬番","馬"])
-        c_name = find_col(["馬名"])
-        c_pop = find_col(["人気"])
-        if c_rank is None: c_rank = 0
-        for tr in trs[1:]:
-            tds = tr.find_all(["td","th"])
-            if not tds:
-                continue
-            vals = [c.get_text(" ", strip=True) for c in tds]
-            if len(vals) <= max(c_rank, c_umaban or 0):
-                continue
-            rk = re.search(r"\d+", vals[c_rank] or "")
-            if not rk:
-                continue
-            rk = int(rk.group())
-            if rk > 3:
-                continue
-            um = None
-            if c_umaban is not None:
-                m = re.search(r"\d+", vals[c_umaban] or "")
-                um = int(m.group()) if m else None
-            nm = vals[c_name] if (c_name is not None and c_name < len(vals)) else ""
-            pp = None
-            if c_pop is not None and c_pop < len(vals):
-                mp = re.search(r"\d+", vals[c_pop] or "")
-                pp = int(mp.group()) if mp else None
-            top3.append({"rank": rk, "umaban": um, "name": nm, "pop": pp})
-        top3.sort(key=lambda x: x["rank"])
+        if trs:
+            # ヘッダ行から列を推測
+            head = [c.get_text(" ", strip=True) for c in trs[0].find_all(["th","td"])]
+
+            def find_col(keys):
+                for i, h in enumerate(head):
+                    for k in keys:
+                        if k in h:
+                            return i
+                return None
+
+            c_rank = find_col(["着順","着"])
+            c_umaban = find_col(["馬番","馬"])
+            c_name = find_col(["馬名"])
+            c_pop = find_col(["人気"])
+            if c_rank is None:
+                c_rank = 0
+
+            for tr in trs[1:]:
+                tds = tr.find_all(["td","th"])
+                if not tds:
+                    continue
+                vals = [c.get_text(" ", strip=True) for c in tds]
+                if len(vals) <= max(c_rank, c_umaban or 0):
+                    continue
+
+                rk = re.search(r"\d+", vals[c_rank] or "")
+                if not rk:
+                    continue
+                rk = int(rk.group())
+                if rk > 3:
+                    continue
+
+                um = None
+                if c_umaban is not None and c_umaban < len(vals):
+                    m = re.search(r"\d+", vals[c_umaban] or "")
+                    um = int(m.group()) if m else None
+
+                nm = vals[c_name] if (c_name is not None and c_name < len(vals)) else ""
+
+                pp = None
+                if c_pop is not None and c_pop < len(vals):
+                    mp = re.search(r"\d+", vals[c_pop] or "")
+                    pp = int(mp.group()) if mp else None
+
+                top3.append({"rank": rk, "umaban": um, "name": nm, "pop": pp})
+
+            top3.sort(key=lambda x: x["rank"])
 
     # 払戻金（ページ上のテキストからざっくり拾う）
     payouts = {}
@@ -169,7 +191,6 @@ def parse_result_race(html: str):
         m = re.search(r"(\d[\d,]*)\s*円", line)
         return int(m.group(1).replace(",", "")) if m else None
 
-    # キー候補（出る順序も揺れるので雑に）
     keys = [
         ("単勝", "tansho"),
         ("複勝", "fukusho"),
@@ -191,16 +212,71 @@ def parse_result_race(html: str):
     return {"top3": top3, "payouts": payouts}
 
 def build_result_url(yyyymmdd: str, track_id: int, race_no: int) -> str:
-    # keiba.go.jp の「結果」ページ（RaceResult）URL
+    # keiba.go.jp の「結果」ページ（RaceMarkTable）
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
     return (
         "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable"
         f"?k_raceDate={date_slash}&k_babaCode={track_id}&k_raceNo={race_no}"
     )
 
+
+# =========================
+# 予想的中判定（上位5内に1-3着が全部入ってたら的中）
+# =========================
+def extract_pred_top5_umaban(picks) -> set:
+    s = set()
+    if not picks:
+        return s
+    for p in picks[:5]:
+        try:
+            s.add(int(p.get("umaban")))
+        except Exception:
+            pass
+    return s
+
+def extract_result_top3_umaban(top3) -> set:
+    s = set()
+    if not top3:
+        return s
+    for h in top3[:3]:
+        try:
+            s.add(int(h.get("umaban")))
+        except Exception:
+            pass
+    return s
+
+def judge_hit_top5_3(picks, top3):
+    """
+    return:
+      True  = 的中（1-3着が予想上位5内）
+      False = 不適中（判定できて外れ）
+      None  = 判定不可（結果top3や予想が欠損）
+    """
+    pred5 = extract_pred_top5_umaban(picks)
+    res3 = extract_result_top3_umaban(top3)
+
+    if len(pred5) < 5:
+        return None
+    if len(res3) < 3:
+        return None
+
+    return res3.issubset(pred5)
+
+
+# =========================
+# HTML
+# =========================
 def html_escape(s: str) -> str:
     import html
     return html.escape(str(s))
+
+def _badge(text: str, bg: str, fg: str = "#111827") -> str:
+    return (
+        "<span style='display:inline-block;padding:4px 10px;border-radius:999px;"
+        f"background:{bg};color:{fg};font-weight:900;font-size:12px;letter-spacing:.02em;"
+        "line-height:1;white-space:nowrap;'>"
+        f"{html_escape(text)}</span>"
+    )
 
 def render_html(title: str, data):
     """
@@ -211,16 +287,44 @@ def render_html(title: str, data):
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
     parts.append(f"<h2 style='margin:12px 0 8px;font-size:20px;font-weight:900;'>{html_escape(title)}</h2>")
 
+    # 全体サマリ（予想的中率）
+    summ = data.get("pred_hit_summary", {}) or {}
+    if summ.get("pred_races", 0) > 0:
+        parts.append(
+            "<div style='margin:14px 0 10px;padding:12px;border-radius:14px;"
+            "border:1px solid #e5e7eb;background:#f8fafc;'>"
+            "<div style='font-weight:900;margin-bottom:6px;'>全体の予想的中率（1-3着が予想上位5内）</div>"
+            f"<div style='display:flex;gap:10px;flex-wrap:wrap;align-items:center;'>"
+            f"{_badge(f\"的中 {summ.get('pred_hits_top5_3',0)} / {summ.get('pred_races',0)}\", '#10b981', '#ffffff')}"
+            f"{_badge(f\"的中率 {float(summ.get('pred_hit_rate_top5_3',0.0)):.1f}%\", '#2563eb', '#ffffff')}"
+            "</div>"
+            "</div>"
+        )
+
     for r in data.get("races", []):
         rno = r.get("race_no")
         race_name = r.get("race_name", "")
         head = f"{rno}R" + (f" {race_name}" if race_name else "")
 
+        # 的中バッジ
+        hit = r.get("pred_hit_top5_3", None)
+        hit_badge = ""
+        if hit is True:
+            hit_badge = _badge("的中", "#10b981", "#ffffff")
+        elif hit is False:
+            hit_badge = _badge("不適中", "#6b7280", "#ffffff")
+
         parts.append(
             "<div style='margin:16px 0 18px;padding:12px 12px;"
             "border:1px solid #e5e7eb;border-radius:14px;background:#ffffff;'>"
         )
-        parts.append(f"<div style='font-size:18px;font-weight:900;color:#111827;'>{html_escape(head)}</div>")
+
+        parts.append(
+            "<div style='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;'>"
+            f"<div style='font-size:18px;font-weight:900;color:#111827;'>{html_escape(head)}</div>"
+            f"<div style='display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;'>{hit_badge}</div>"
+            "</div>"
+        )
 
         # 予想（predictのtop5）
         picks = r.get("picks", [])
@@ -305,6 +409,10 @@ def render_html(title: str, data):
     parts.append("</div>")
     return "\n".join(parts)
 
+
+# =========================
+# 収支（任意）
+# =========================
 def calc_pnl_simple(picks, top3, unit=100):
     """
     超簡易：◎（1位予想）が1着なら +unit、それ以外 -unit
@@ -318,6 +426,10 @@ def calc_pnl_simple(picks, top3, unit=100):
         return 0
     return unit if int(pred1) == int(win) else -unit
 
+
+# =========================
+# predict JSON 読み込み
+# =========================
 def load_predict_json(yyyymmdd: str, track_id: int):
     # output/predict_YYYYMMDD_<trackId>.json を読む
     p = PRED_DIR / f"predict_{yyyymmdd}_{track_id}.json"
@@ -328,6 +440,10 @@ def load_predict_json(yyyymmdd: str, track_id: int):
     except Exception:
         return None
 
+
+# =========================
+# main
+# =========================
 def main():
     yyyymmdd = os.environ.get("DATE") or datetime.now().strftime("%Y%m%d")
     debug = os.environ.get("DEBUG", "").strip() == "1"
@@ -347,6 +463,10 @@ def main():
         "tracks": [],
     }
 
+    # ===== 追加：全体的中率（全開催場 合算） =====
+    global_pred_races = 0
+    global_pred_hits = 0
+
     for track in active:
         track_id = BABA_CODE.get(track)
         if not track_id or track_id in EXCLUDE_BABA:
@@ -360,6 +480,10 @@ def main():
         races = []
         track_pnl = 0
 
+        # ===== 追加：開催場内的中率 =====
+        track_pred_races = 0
+        track_pred_hits = 0
+
         for r in pred.get("predictions", []):
             rno = int(r.get("race_no", 0))
             race_name = r.get("race_name", "")
@@ -369,6 +493,15 @@ def main():
             url = build_result_url(yyyymmdd, track_id, rno)
             html = fetch(url, debug=False)
             rr = parse_result_race(html)
+
+            # ===== 追加：的中判定（上位5内） =====
+            hit = judge_hit_top5_3(picks, rr.get("top3", []))
+            if hit is not None:
+                track_pred_races += 1
+                global_pred_races += 1
+                if hit:
+                    track_pred_hits += 1
+                    global_pred_hits += 1
 
             pnl = None
             if BET_ENABLED:
@@ -382,11 +515,15 @@ def main():
                 "result": rr,
                 "result_url": url,
                 "pnl": pnl,
+                # 追加：HTML/JSONで使う
+                "pred_hit_top5_3": hit,  # True/False/None
             })
             time.sleep(0.05)
 
         if BET_ENABLED:
             total_pnl += track_pnl
+
+        track_hit_rate = round((track_pred_hits / track_pred_races * 100.0), 1) if track_pred_races else 0.0
 
         title = f"{yyyymmdd[0:4]}.{yyyymmdd[4:6]}.{yyyymmdd[6:8]} {track}競馬 結果"
         out = {
@@ -399,6 +536,15 @@ def main():
             "bet_unit": BET_UNIT,
             "pnl_total": track_pnl if BET_ENABLED else None,
             "races": races,
+
+            # 追加：開催場内サマリ
+            "pred_hit_summary": {
+                "rule": "top3_in_pred_top5",
+                "pred_races": track_pred_races,
+                "pred_hits_top5_3": track_pred_hits,
+                "pred_hit_rate_top5_3": track_hit_rate,
+                "last_updated": datetime.now().isoformat(timespec="seconds"),
+            },
         }
 
         json_path = OUT_DIR / f"result_{yyyymmdd}_{track}.json"
@@ -414,11 +560,26 @@ def main():
             "pnl_total": track_pnl if BET_ENABLED else None,
             "result_json": json_path.name,
             "result_html": html_path.name,
+
+            # 追加：開催場内サマリ（トップ集計にも出せる）
+            "pred_races": track_pred_races,
+            "pred_hits_top5_3": track_pred_hits,
+            "pred_hit_rate_top5_3": track_hit_rate,
         })
 
     # 合計収支
     if BET_ENABLED:
         out_total["pnl_total"] = total_pnl
+
+    # ===== 追加：全体（全開催場）サマリ =====
+    global_hit_rate = round((global_pred_hits / global_pred_races * 100.0), 1) if global_pred_races else 0.0
+    out_total["pred_hit_summary"] = {
+        "rule": "top3_in_pred_top5",
+        "pred_races": global_pred_races,
+        "pred_hits_top5_3": global_pred_hits,
+        "pred_hit_rate_top5_3": global_hit_rate,
+        "last_updated": datetime.now().isoformat(timespec="seconds"),
+    }
 
     (OUT_DIR / "pnl_total.json").write_text(json.dumps(out_total, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[OK] wrote {OUT_DIR / 'pnl_total.json'}")
