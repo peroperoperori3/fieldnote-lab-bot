@@ -4,7 +4,10 @@ import requests
 WP_BASE = os.environ["WP_BASE"].rstrip("/")
 WP_USER = os.environ["WP_USER"]
 WP_APP_PASSWORD = os.environ["WP_APP_PASSWORD"]
-WP_POST_STATUS = os.environ.get("WP_POST_STATUS", "publish")
+
+# ★ここだけ修正：空文字でも publish に落とす
+WP_POST_STATUS = (os.environ.get("WP_POST_STATUS") or "publish").strip()
+print(f"[DEBUG] WP_POST_STATUS = {WP_POST_STATUS!r}")
 
 MODE = os.environ.get("MODE", "predict").strip().lower()
 print(f"[DEBUG] MODE = {MODE}")
