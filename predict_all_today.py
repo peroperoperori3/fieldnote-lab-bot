@@ -58,6 +58,43 @@ KAISEKISYA_JOCKEY_URL = {
   "佐賀": "https://www.kaisekisya.net/local/jockey/saga.html",
 }
 
+# =========================
+# 余計な文字を消す（馬名/レース名）
+# =========================
+def _norm_text(s: str) -> str:
+    s = str(s).replace("\u3000", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def clean_horse_name(raw: str) -> str:
+    s = _norm_text(raw)
+
+    # 例: "ソイジャガー 5ヶ月前" / "ソイジャガー 12日前" などを落とす
+    s = re.sub(r"\s+\d+\s*(?:日|週|ヶ月|か月|月|年)\s*前.*$", "", s).strip()
+
+    # 括弧注釈が混ざるケース（保険）
+    s = re.sub(r"[（(].*?[）)]", "", s).strip()
+
+    # 先頭トークンだけにする保険（馬名は基本スペースが入らない）
+    s = s.split(" ")[0].strip()
+
+    return s
+
+def clean_race_name(raw: str) -> str:
+    s = _norm_text(raw)
+
+    # "1R" 以降（ナビ/時刻/馬場一覧/想定など）を切り捨て
+    s = re.split(r"\b\d{1,2}R\b", s)[0].strip()
+
+    # それでも "»" 等が残る場合
+    s = s.split("»")[0].strip()
+
+    # 表記ゆれ整形（お好み）
+    s = s.replace("－", "-").replace("―", "-").replace("—", "-")
+    s = re.sub(r"\s*-\s*", "-", s).strip()
+
+    return s
+
 # ===== HTTP =====
 def fetch(url: str, debug=False, params=None) -> str:
     try:
@@ -175,6 +212,26 @@ def nar_tablephp_html(date: str, track: str, number: str, condition: str, debug=
     params = {"date": date, "track": track, "number": number, "condition": condition}
     return fetch(url, debug=debug, params=params)
 
+def parse_nar_race_name(html: str) -> str:
+    """
+    NAR table.php からレース名を拾う（予備）
+    """
+    if not html:
+        return ""
+    soup = BeautifulSoup(html, "lxml")
+    h3s = soup.find_all("h3")
+    if not h3s:
+        return ""
+    best = ""
+    for h in h3s:
+        t = _norm_text(h.get_text(" ", strip=True))
+        if re.search(r"\b\d{1,2}R\b", t):
+            best = t
+            break
+    if not best:
+        best = _norm_text(h3s[0].get_text(" ", strip=True))
+    return clean_race_name(best)
+
 def parse_nar_tablephp_rows(html: str):
     """
     返り値: [{umaban,name,jockey,avg_index}, ...]
@@ -222,7 +279,9 @@ def parse_nar_tablephp_rows(html: str):
         if not mban:
             continue
 
-        name = vals[c_name]
+        # ★馬名をクリーンに（ここが重要）
+        name = clean_horse_name(vals[c_name])
+
         jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[c_jockey])
 
         mavg = re.search(r"(\d+(?:\.\d+)?)", vals[c_avg])
@@ -240,7 +299,7 @@ def parse_nar_tablephp_rows(html: str):
 def fetch_nar_rows_best_condition(date: str, track_id: int, rno: int, debug=False):
     """
     condition=1..4 を試して、最初に rows が取れたものを採用
-    return: (rows, used_condition, source_url)
+    return: (rows, used_condition, source_url, race_name_from_nar)
     """
     track = str(track_id)
     number = str(int(rno))
@@ -251,9 +310,10 @@ def fetch_nar_rows_best_condition(date: str, track_id: int, rno: int, debug=Fals
         rows = parse_nar_tablephp_rows(html)
         if rows:
             src = f"https://nar.k-ba.net/table.php?date={date}&track={track}&number={number}&condition={cond}"
-            return rows, cond, src
+            race_name = parse_nar_race_name(html)
+            return rows, cond, src, race_name
         time.sleep(0.03)
-    return [], None, None
+    return [], None, None, ""
 
 # ====== 吉馬（SP能力値） ======
 def build_kichiuma_fp_url(yyyymmdd: str, track_id: int, race_no: int) -> str:
@@ -344,7 +404,7 @@ def parse_kichiuma_sp(html: str):
 
     t = find_sp_table(soup)
     if not t:
-        return {}, meta.get("race_name", "")
+        return {}, clean_race_name(meta.get("race_name", "") or "")
 
     trs = t.find_all("tr")
     headers_raw = [c.get_text(" ", strip=True) for c in trs[0].find_all(["th","td"])]
@@ -364,7 +424,7 @@ def parse_kichiuma_sp(html: str):
                 c_sp = i
                 break
     if c_sp is None:
-        return {}, meta.get("race_name", "")
+        return {}, clean_race_name(meta.get("race_name", "") or "")
 
     sp_by = {}
     for tr in trs[1:]:
@@ -392,7 +452,8 @@ def parse_kichiuma_sp(html: str):
 
         sp_by[umaban] = float(msp.group(1))
 
-    return sp_by, meta.get("race_name", "")
+    # ★レース名も整形して返す
+    return sp_by, clean_race_name(meta.get("race_name", "") or "")
 
 # ===== 混戦度 =====
 def _clamp(x, lo, hi):
@@ -674,7 +735,7 @@ def main():
         # レース数は最大12想定で「取れたレースだけ採用」
         for rno in range(1, 13):
             # ---- NAR 平均指数（base_index）----
-            nar_rows, used_cond, nar_src = fetch_nar_rows_best_condition(yyyymmdd, track_id, rno, debug=False)
+            nar_rows, used_cond, nar_src, race_name_from_nar = fetch_nar_rows_best_condition(yyyymmdd, track_id, rno, debug=False)
 
             # 1Rから何も取れない場は基本的に“その場NG”扱いにしたいので
             if not nar_rows:
@@ -695,7 +756,12 @@ def main():
                 track_incomplete = True
                 break
 
-            sp_by_umaban, race_name = parse_kichiuma_sp(fp_html)
+            sp_by_umaban, race_name_kichiuma = parse_kichiuma_sp(fp_html)
+
+            # ★レース名は「吉馬→NAR」順に使い、どちらも clean する
+            race_name = clean_race_name(race_name_kichiuma) if race_name_kichiuma else ""
+            if not race_name:
+                race_name = clean_race_name(race_name_from_nar) if race_name_from_nar else ""
 
             # rows を “共通フォーマット” に
             rows = []
@@ -711,7 +777,7 @@ def main():
 
                 rows.append({
                     "umaban": u,
-                    "name": h["name"],
+                    "name": clean_horse_name(h["name"]),  # ★ここで確実にクリーン化
                     "jockey": j,
                     "base_index": base,
                     "jockey_add": float(add),
@@ -735,7 +801,7 @@ def main():
 
                 horses_scored.append({
                     "umaban": int(r["umaban"]),
-                    "name": r["name"],
+                    "name": clean_horse_name(r["name"]),  # ★保険でもう一回
                     "jockey": r.get("jockey", ""),
                     "sp": sp,
                     "base_index": base,
@@ -767,7 +833,7 @@ def main():
                 picks.append({
                     "mark": MARKS5[j],
                     "umaban": int(hh["umaban"]),
-                    "name": hh["name"],
+                    "name": clean_horse_name(hh["name"]),  # ★確実にクリーン
                     "score": float(hh["score"]),
                     "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
