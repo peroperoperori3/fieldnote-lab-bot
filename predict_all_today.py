@@ -1,3 +1,11 @@
+# predict_all_today.py
+# 目的：ばんえい(帯広=3)以外の開催場を「取りこぼしにくく」予想JSON/HTML出力する
+#  - 開催判定：keiba.go.jp の RaceList を基本にしつつ、取りこぼし時は NAR(table.html) で 1R を試して補完
+#  - 指数：nar.k-ba.net の table.html を優先（姫路など table.php が <table id="table"> じゃないケース対策）
+#  - SP：吉馬（kichiuma）
+#  - 騎手補正：kaisekisya
+#  - 出力：output/predict_YYYYMMDD_<trackId>.json / .html
+
 import os, re, json, time, math
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +19,7 @@ MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 # ===== スコア重み（環境変数で調整可）=====
 # SPをメインにして、NAR平均指数(=base_index)と騎手は補正程度
 SP_W = float(os.environ.get("SP_W", "1.0"))
-KB_W = float(os.environ.get("KB_W", "0.10"))     # ← ここは “NAR平均指数” に対する重みとして使う
+KB_W = float(os.environ.get("KB_W", "0.10"))     # ← “NAR平均指数” に対する重み
 JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.20"))
 
 # ===== 混戦度（案3：ギャップ方式 / 環境変数で調整可）=====
@@ -111,23 +119,78 @@ def fetch(url: str, debug=False, params=None) -> str:
     r.encoding = r.apparent_encoding
     return r.text
 
-# ===== 開催判定（keiba.go.jp） =====
-def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
+# =========================================================
+# 開催判定：keiba.go.jp を基本、NAR(table.html)で補完
+# =========================================================
+def keibago_racelist_has_race(html: str) -> bool:
+    if not html:
+        return False
+    # RaceList は「1R」表記が出ることが多い
+    return ("1R" in html) or ("２Ｒ" in html) or ("出馬表" in html)
+
+def nar_tablehtml_url(date: str, track: str, number: str) -> str:
+    # 例: https://nar.k-ba.net/20260122/28/1/table.html
+    return f"https://nar.k-ba.net/{date}/{int(track)}/{int(number)}/table.html"
+
+def nar_tablehtml_seems_valid(html: str) -> bool:
+    if not html:
+        return False
+    # table.html はだいたい「平均指数」や「馬番」が含まれる
+    txt = html
+    return ("平均指数" in txt) and (("馬番" in txt) or re.search(r"\b1\s+\S+", BeautifulSoup(html, "lxml").get_text("\n", strip=True) or ""))
+
+def detect_active_tracks(yyyymmdd: str, debug=False):
+    """
+    取りこぼし対策：
+      1) keiba.go.jp RaceListで検出
+      2) 見つからなかった場は NAR table.html の 1R を叩いて補完（帯広除外）
+    """
     active = []
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
+
+    # 1) keiba.go.jp で判定
     for track, baba in BABA_CODE.items():
         if baba in EXCLUDE_BABA:
             continue
         url = f"https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceList?k_babaCode={baba}&k_raceDate={date_slash}"
         html = fetch(url, debug=debug)
-        if html and ("1R" in html):
+        ok = keibago_racelist_has_race(html)
+        if ok:
             active.append(track)
             if debug:
-                print(f"[ACTIVE] {track} (babaCode={baba})")
+                print(f"[ACTIVE:keiba.go.jp] {track} (babaCode={baba})")
         else:
             if debug:
-                print(f"[NO] {track} (babaCode={baba})")
+                print(f"[NO:keiba.go.jp] {track} (babaCode={baba})")
         time.sleep(0.08)
+
+    # 2) 補完：keiba.go.jpで落ちるケース（姫路など）対策
+    missing = [t for t in BABA_CODE.keys() if t not in active and BABA_CODE[t] not in EXCLUDE_BABA]
+    if missing:
+        if debug:
+            print(f"[INFO] fallback check by NAR table.html for: {missing}")
+        for track in missing:
+            track_id = BABA_CODE[track]
+            url = nar_tablehtml_url(yyyymmdd, str(track_id), "1")
+            html = fetch(url, debug=debug)
+            if nar_tablehtml_seems_valid(html):
+                active.append(track)
+                if debug:
+                    print(f"[ACTIVE:NAR] {track} (track={track_id})")
+            else:
+                if debug:
+                    print(f"[NO:NAR] {track} (track={track_id})")
+            time.sleep(0.06)
+
+    # 環境変数で強制追加も可能（保険）
+    # TRACKS_FORCE="姫路,園田" のように
+    force = os.environ.get("TRACKS_FORCE", "").strip()
+    if force:
+        add = [x.strip() for x in force.split(",") if x.strip()]
+        for t in add:
+            if t in BABA_CODE and (t not in active) and (BABA_CODE[t] not in EXCLUDE_BABA):
+                active.append(t)
+
     return active
 
 # ====== kaisekisya 解析（騎手補正） ======
@@ -201,21 +264,10 @@ def jockey_add_points(win: float, quin: float, tri: float) -> float:
     raw = win * 0.45 + quin * 0.35 + tri * 0.20
     return raw / 4.0
 
-# ===== NAR(table.php) 解析 =====
-def norm(s: str) -> str:
-    s = str(s).replace("\u3000"," ")
-    s = re.sub(r"\s+"," ",s).strip()
-    return s
-
-def nar_tablephp_html(date: str, track: str, number: str, condition: str, debug=False) -> str:
-    url = "https://nar.k-ba.net/table.php"
-    params = {"date": date, "track": track, "number": number, "condition": condition}
-    return fetch(url, debug=debug, params=params)
-
+# =========================================================
+# NAR(table.html) 解析（姫路など table.php が不安定な場対策）
+# =========================================================
 def parse_nar_race_name(html: str) -> str:
-    """
-    NAR table.php からレース名を拾う（予備）
-    """
     if not html:
         return ""
     soup = BeautifulSoup(html, "lxml")
@@ -232,10 +284,66 @@ def parse_nar_race_name(html: str) -> str:
         best = _norm_text(h3s[0].get_text(" ", strip=True))
     return clean_race_name(best)
 
-def parse_nar_tablephp_rows(html: str):
+def parse_nar_rows_text_fallback(html: str):
     """
+    nar.k-ba.net の table.html / table.php が <table id="table"> を返さない場合のフォールバック。
     返り値: [{umaban,name,jockey,avg_index}, ...]
     """
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, "lxml")
+    text = soup.get_text("\n", strip=True)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    rows = []
+    cur = None
+
+    re_jockey = re.compile(r"\b\d{1,2}\.\d\b\s+(\S+)\s+\d{3}\b")
+    re_idx = re.compile(r"\)\s*(\d+(?:\.\d+)?)")
+
+    for ln in lines:
+        m = re.match(r"^(\d{1,2})\s+(.+)$", ln)
+        if m:
+            if cur and (cur.get("avg_index") is not None):
+                rows.append(cur)
+            umaban = int(m.group(1))
+            name = clean_horse_name(m.group(2))
+            cur = {"umaban": umaban, "name": name, "jockey": "", "avg_index": None}
+            continue
+
+        if not cur:
+            continue
+
+        if not cur["jockey"]:
+            mj = re_jockey.search(ln)
+            if mj:
+                cur["jockey"] = re.sub(r"[◀◁▶▷\s]+", "", mj.group(1))
+
+        if cur["avg_index"] is None:
+            nums = re_idx.findall(ln)
+            if nums:
+                cur["avg_index"] = float(nums[-1])
+
+    if cur and (cur.get("avg_index") is not None):
+        rows.append(cur)
+
+    # それでも薄い場合、最低限のフィルタ
+    rows = [r for r in rows if isinstance(r.get("avg_index"), (int,float)) and r.get("name")]
+    return rows
+
+# （保険）table.php を使う場合の既存パーサも残す（table id="table" 形式）
+def norm(s: str) -> str:
+    s = str(s).replace("\u3000"," ")
+    s = re.sub(r"\s+"," ",s).strip()
+    return s
+
+def nar_tablephp_html(date: str, track: str, number: str, condition: str, debug=False) -> str:
+    url = "https://nar.k-ba.net/table.php"
+    params = {"date": date, "track": track, "number": number, "condition": condition}
+    return fetch(url, debug=debug, params=params)
+
+def parse_nar_tablephp_rows(html: str):
     soup = BeautifulSoup(html, "lxml")
     t = soup.find("table", id="table")
     if not t:
@@ -279,9 +387,7 @@ def parse_nar_tablephp_rows(html: str):
         if not mban:
             continue
 
-        # ★馬名をクリーンに（ここが重要）
         name = clean_horse_name(vals[c_name])
-
         jockey = re.sub(r"[◀◁▶▷\s]+", "", vals[c_jockey])
 
         mavg = re.search(r"(\d+(?:\.\d+)?)", vals[c_avg])
@@ -296,23 +402,34 @@ def parse_nar_tablephp_rows(html: str):
         })
     return rows
 
-def fetch_nar_rows_best_condition(date: str, track_id: int, rno: int, debug=False):
+def fetch_nar_rows_best(date: str, track_id: int, rno: int, debug=False):
     """
-    condition=1..4 を試して、最初に rows が取れたものを採用
+    まず table.html を取りに行き、取れたらそれを採用。
+    取れない場合のみ table.php を condition=1..4 で試す。
     return: (rows, used_condition, source_url, race_name_from_nar)
     """
     track = str(track_id)
     number = str(int(rno))
+
+    url = nar_tablehtml_url(date, track, number)
+    html = fetch(url, debug=debug)
+    rows = parse_nar_rows_text_fallback(html)
+    if rows:
+        race_name = parse_nar_race_name(html)
+        return rows, None, url, race_name
+
+    # 保険：table.php
     for cond in ["1","2","3","4"]:
-        html = nar_tablephp_html(date, track, number, cond, debug=debug)
-        if not html:
+        html2 = nar_tablephp_html(date, track, number, cond, debug=debug)
+        if not html2:
             continue
-        rows = parse_nar_tablephp_rows(html)
-        if rows:
+        rows2 = parse_nar_tablephp_rows(html2) or parse_nar_rows_text_fallback(html2)
+        if rows2:
             src = f"https://nar.k-ba.net/table.php?date={date}&track={track}&number={number}&condition={cond}"
-            race_name = parse_nar_race_name(html)
-            return rows, cond, src, race_name
+            race_name = parse_nar_race_name(html2)
+            return rows2, cond, src, race_name
         time.sleep(0.03)
+
     return [], None, None, ""
 
 # ====== 吉馬（SP能力値） ======
@@ -452,7 +569,6 @@ def parse_kichiuma_sp(html: str):
 
         sp_by[umaban] = float(msp.group(1))
 
-    # ★レース名も整形して返す
     return sp_by, clean_race_name(meta.get("race_name", "") or "")
 
 # ===== 混戦度 =====
@@ -502,7 +618,7 @@ def calc_konsen_gap(top5_scores_desc):
         "sc15": round(sc15, 4),
     }
 
-# ====== HTML（表示はそのまま流用） ======
+# ====== HTML（表示） ======
 def render_html(title: str, preds) -> str:
     import html as _html
 
@@ -570,6 +686,7 @@ def render_html(title: str, preds) -> str:
 
     parts = []
     parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
+    parts.append(f"<h2 style='margin:12px 0 8px;font-size:20px;font-weight:900;'>{esc(title)}</h2>")
 
     for race in preds:
         rno = int(race["race_no"])
@@ -704,6 +821,9 @@ def estimate_sp_factory(rows, debug=False):
         print(f"[DEBUG] SP-estimator info: {info}")
     return est, info
 
+# =========================================================
+# main
+# =========================================================
 def main():
     yyyymmdd = os.environ.get("DATE") or datetime.now().strftime("%Y%m%d")
     debug = os.environ.get("DEBUG", "").strip() == "1"
@@ -713,7 +833,7 @@ def main():
     print(f"[INFO] WEIGHTS SP_W={SP_W} KB_W={KB_W} JOCKEY_W={JOCKEY_W}")
     print(f"[INFO] KONSEN name={KONSEN_NAME} gap12_mid={KONSEN_GAP12_MID} gap15_mid={KONSEN_GAP15_MID} focus_th={KONSEN_FOCUS_TH}")
 
-    active = detect_active_tracks_keibago(yyyymmdd, debug=debug)
+    active = detect_active_tracks(yyyymmdd, debug=debug)
     print(f"[INFO] active_tracks = {active}")
 
     for track in active:
@@ -735,15 +855,14 @@ def main():
         # レース数は最大12想定で「取れたレースだけ採用」
         for rno in range(1, 13):
             # ---- NAR 平均指数（base_index）----
-            nar_rows, used_cond, nar_src, race_name_from_nar = fetch_nar_rows_best_condition(yyyymmdd, track_id, rno, debug=False)
+            nar_rows, used_cond, nar_src, race_name_from_nar = fetch_nar_rows_best(yyyymmdd, track_id, rno, debug=False)
 
-            # 1Rから何も取れない場は基本的に“その場NG”扱いにしたいので
+            # 1Rから何も取れない場は“その場NG”
             if not nar_rows:
                 if rno == 1:
                     print(f"[SKIP] {track}: NAR rows not found (rno=1) -> NO OUTPUT")
                     track_incomplete = True
                 else:
-                    # 途中で無いなら、その場はここで打ち切り（例: 11Rまで等）
                     if debug:
                         print(f"[INFO] {track}: stop at {rno}R (no nar rows)")
                 break
@@ -758,7 +877,7 @@ def main():
 
             sp_by_umaban, race_name_kichiuma = parse_kichiuma_sp(fp_html)
 
-            # ★レース名は「吉馬→NAR」順に使い、どちらも clean する
+            # ★レース名は「吉馬→NAR」順に使い、どちらも clean
             race_name = clean_race_name(race_name_kichiuma) if race_name_kichiuma else ""
             if not race_name:
                 race_name = clean_race_name(race_name_from_nar) if race_name_from_nar else ""
@@ -767,8 +886,8 @@ def main():
             rows = []
             for h in nar_rows:
                 u = int(h["umaban"])
-                base = float(h["avg_index"])   # ← NAR平均指数を base_index として採用
-                j = h.get("jockey", "")
+                base = float(h["avg_index"])   # NAR平均指数を base_index として採用
+                j = h.get("jockey", "") or ""
 
                 rates = match_jockey_by3(norm_jockey3(j), jockey_stats) if (j and jockey_stats) else None
                 add = jockey_add_points(*rates) if rates else 0.0
@@ -777,14 +896,19 @@ def main():
 
                 rows.append({
                     "umaban": u,
-                    "name": clean_horse_name(h["name"]),  # ★ここで確実にクリーン化
+                    "name": clean_horse_name(h["name"]),
                     "jockey": j,
                     "base_index": base,
                     "jockey_add": float(add),
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
-            est_sp, est_info = estimate_sp_factory(rows, debug=False)
+            if len(rows) < 5:
+                print(f"[SKIP] {track} {rno}R: rows < 5 -> skip track")
+                track_incomplete = True
+                break
+
+            est_sp, _ = estimate_sp_factory(rows, debug=False)
 
             for r in rows:
                 if r["sp_raw"] is None:
@@ -801,7 +925,7 @@ def main():
 
                 horses_scored.append({
                     "umaban": int(r["umaban"]),
-                    "name": clean_horse_name(r["name"]),  # ★保険でもう一回
+                    "name": clean_horse_name(r["name"]),
                     "jockey": r.get("jockey", ""),
                     "sp": sp,
                     "base_index": base,
@@ -809,7 +933,7 @@ def main():
                     "score": float(score),
                     "source": {
                         "kichiuma_fp_url": fp_url,
-                        "nar_tablephp_url": nar_src,
+                        "nar_table_url": nar_src,
                         "nar_condition": used_cond,
                     },
                 })
@@ -833,7 +957,7 @@ def main():
                 picks.append({
                     "mark": MARKS5[j],
                     "umaban": int(hh["umaban"]),
-                    "name": clean_horse_name(hh["name"]),  # ★確実にクリーン
+                    "name": clean_horse_name(hh["name"]),
                     "score": float(hh["score"]),
                     "sp": float(hh["sp"]),
                     "base_index": float(hh["base_index"]),
@@ -862,7 +986,7 @@ def main():
         out = {
             "date": yyyymmdd,
             "place": track,
-            "place_code": str(track_id),  # ← ここは “NAR track / babaCode” に変更
+            "place_code": str(track_id),
             "title": title,
             "predictions": preds,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -875,7 +999,7 @@ def main():
             },
             "source": {
                 "kaisekisya_url": jockey_url,
-                "nar_base": "https://nar.k-ba.net/table.php",
+                "nar_base": "https://nar.k-ba.net/",
             }
         }
 
@@ -886,7 +1010,7 @@ def main():
         json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
         html_path.write_text(render_html(title, preds), encoding="utf-8")
 
-        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (NAR track={track_id})")
+        print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (track={track_id})")
 
 if __name__ == "__main__":
     main()
