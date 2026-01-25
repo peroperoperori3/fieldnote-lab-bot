@@ -95,7 +95,6 @@ KEIBABLOOD_CODE = {
   "金沢": "46","笠松": "47","名古屋": "48","園田": "50","姫路": "51","高知": "54","佐賀": "55",
 }
 
-
 def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
     active = []
     date_slash = f"{yyyymmdd[0:4]}/{yyyymmdd[4:6]}/{yyyymmdd[6:8]}"
@@ -112,18 +111,22 @@ def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
 
 
 # =========================
-# ★predict JSON を読む（これが“完全一致”のキモ）
+# ★predict JSON を探す（これが“完全一致”のキモ）
 # =========================
-predict_pattern = f"output/predict_{yyyymmdd}_{baba}.json"
-    # いままでの出力パターンを全部拾う（どれでもOK）
+def _find_predict_json(yyyymmdd: str, baba: int, place_code: str):
+    # まず「baba（19とか）」で探す（あなたの現状のpredict出力はこれ）
     cand = []
+    cand += glob.glob(f"output/predict_{yyyymmdd}_{baba}.json")
+    cand += glob.glob(f"predict_{yyyymmdd}_{baba}.json")
+    cand += glob.glob(f"out/predict_{yyyymmdd}_{baba}.json")
+    cand += glob.glob(f"**/predict_{yyyymmdd}_{baba}.json", recursive=True)
+
+    # 念のため「place_code（43とか）」でも探す（将来そっちに変える可能性用）
     cand += glob.glob(f"output/predict_{yyyymmdd}_{place_code}.json")
     cand += glob.glob(f"predict_{yyyymmdd}_{place_code}.json")
     cand += glob.glob(f"out/predict_{yyyymmdd}_{place_code}.json")
-    # たまに 0 埋め・拡張違いがあった時の保険（ワイルドカード）
     cand += glob.glob(f"**/predict_{yyyymmdd}_{place_code}.json", recursive=True)
 
-    # 先頭を採用（同じものが複数見つかるときもあるため）
     cand = [c for c in cand if Path(c).is_file()]
     return cand[0] if cand else None
 
@@ -193,8 +196,8 @@ def _norm_pred_races(pred_json: dict):
         })
     return out
 
-def load_predict_for_track(yyyymmdd: str, place_code: str):
-    path = _find_predict_json(yyyymmdd, place_code)
+def load_predict_for_track(yyyymmdd: str, baba: int, place_code: str):
+    path = _find_predict_json(yyyymmdd, baba, place_code)
     if not path:
         return None, None
 
@@ -209,7 +212,6 @@ def load_predict_for_track(yyyymmdd: str, place_code: str):
         print(f"[WARN] predict json has no races: {path}")
         return None, path
 
-    # race_no -> dict
     race_map = {int(r["race_no"]): r for r in races}
     return race_map, path
 
@@ -667,9 +669,9 @@ def main():
             continue
 
         # ★predict読み込み（ここが最重要）
-        pred_map, pred_path = load_predict_for_track(yyyymmdd, place_code)
+        pred_map, pred_path = load_predict_for_track(yyyymmdd, baba, place_code)
         if not pred_map:
-            print(f"[SKIP] {track}: predict json not found. (need predict run first) place_code={place_code}")
+            print(f"[SKIP] {track}: predict json not found. (need predict run first) baba={baba} place_code={place_code}")
             continue
 
         if DEBUG:
