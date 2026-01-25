@@ -114,7 +114,7 @@ def detect_active_tracks_keibago(yyyymmdd: str, debug=False):
 # =========================
 # ★predict JSON を読む（これが“完全一致”のキモ）
 # =========================
-def _find_predict_json(yyyymmdd: str, place_code: str):
+predict_pattern = f"output/predict_{yyyymmdd}_{baba}.json"
     # いままでの出力パターンを全部拾う（どれでもOK）
     cand = []
     cand += glob.glob(f"output/predict_{yyyymmdd}_{place_code}.json")
