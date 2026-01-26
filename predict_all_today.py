@@ -1,15 +1,8 @@
-# predict_all_today.py
-# 目的：ばんえい(帯広=3)以外の開催場を「取りこぼしにくく」予想JSON/HTML出力する
-#  - 開催判定：keiba.go.jp の RaceList を基本にしつつ、取りこぼし時は NAR(table.html) で 1R を試して補完
-#  - 指数：nar.k-ba.net の table.html を優先（姫路など table.php が <table id="table"> じゃないケース対策）
-#  - SP：吉馬（kichiuma）
-#  - 騎手補正：kaisekisya
-#  - 出力：output/predict_YYYYMMDD_<trackId>.json / .html
-#
-# ★改造ポイント（今回）：
-#  - スコアは「SP / KB / 騎手」をレース内で標準化（Z化）して合成する
-#  - 欠損は「推定 or レース中央値」で補完し、“片方だけデータがある馬”が極端に不利にならないようにする
-#  - 最終指数は xx.xx（小数2桁）で出力
+# ===== PART 1 / 4 =====
+# predict_all_today.py（改造反映版）
+# 範囲：先頭〜開催判定(detect_active_tracks)まで
+# ※このPARTに「追加①：低シグナルスキップ用の環境変数」も反映済み
+# 次は PART 2 / 4 を貼ってください（解析系：kaisekisya/NAR/吉馬/混戦度/スキップ関数追加）
 
 import os, re, json, time, math
 from datetime import datetime
@@ -42,12 +35,24 @@ KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
 KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "30"))
 KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
+
 # ===== 新馬戦っぽいレースをスキップ（指数が横並び等） =====
 SKIP_FLAT_INDEX = os.environ.get("SKIP_FLAT_INDEX", "1").strip() != "0"
 # 「ほぼ全員同じ」の判定幅（指数の最大-最小がこれ以下ならスキップ）
 FLAT_INDEX_RANGE_MAX = float(os.environ.get("FLAT_INDEX_RANGE_MAX", "0.8"))
 # 指数が何頭以上そろってたら判定するか（少なすぎると誤判定するので）
 FLAT_INDEX_MIN_COUNT = int(os.environ.get("FLAT_INDEX_MIN_COUNT", "6"))
+
+# ===== 低シグナル（新馬/指数欠損だらけ）スキップ =====
+SKIP_LOW_SIGNAL = os.environ.get("SKIP_LOW_SIGNAL", "1").strip() != "0"
+# 平均指数が揃ってる頭数がこれ未満なら「指数不足」
+MIN_KB_COUNT = int(os.environ.get("MIN_KB_COUNT", "6"))
+# SPが揃ってる頭数がこれ未満なら「SP不足」
+MIN_SP_COUNT = int(os.environ.get("MIN_SP_COUNT", "3"))
+# 平均指数の有効比率がこれ未満なら「欠損過多」
+MIN_VALID_RATIO = float(os.environ.get("MIN_VALID_RATIO", "0.6"))
+# “全部同点っぽい” の判定（スコア最大-最小がこれ以下ならスキップ）
+FLAT_SCORE_RANGE_MAX = float(os.environ.get("FLAT_SCORE_RANGE_MAX", "0.2"))
 
 # ===== NAR（nar.k-ba.net）track code（= keiba.go.jp k_babaCode）※帯広(3)除外 =====
 BABA_CODE = {
@@ -185,6 +190,11 @@ def detect_active_tracks(yyyymmdd: str, debug=False):
                 active.append(t)
 
     return active
+# ===== PART 2 / 4 =====
+# predict_all_today.py（改造反映版）
+# 範囲：kaisekisya解析〜NAR解析〜吉馬SP解析〜混戦度〜スキップ判定関数まで
+# ※このPARTに「追加②：is_maiden_like / should_skip_low_signal」も反映済み
+# 次は PART 3 / 4（HTML描画＋スコア計算compute_scores_newまで）を貼ってください
 
 # ====== kaisekisya 解析（騎手補正） ======
 def parse_kaisekisya_jockey_table(html: str):
@@ -636,6 +646,47 @@ def should_skip_flat_index(rows) -> bool:
     rng = max(vals) - min(vals)
     return rng <= float(FLAT_INDEX_RANGE_MAX)
 
+# ===== 追加②：低シグナル判定（新馬/欠損過多） =====
+def is_maiden_like(race_name: str) -> bool:
+    s = _norm_text(race_name)
+    return ("新馬" in s)
+
+def should_skip_low_signal(rows, race_name: str, sp_by_umaban: dict) -> (bool, str):
+    """
+    低シグナル（指数欠損だらけ/新馬で材料不足/全部同点）ならスキップ
+    戻り値: (skip?, reason)
+    """
+    if not SKIP_LOW_SIGNAL:
+        return False, ""
+
+    n = len(rows)
+    if n <= 0:
+        return True, "no runners"
+
+    kb_valid = sum(1 for r in rows if isinstance(r.get("base_index"), (int, float)))
+    sp_valid = len(sp_by_umaban or {})
+    kb_ratio = kb_valid / n
+
+    maiden = is_maiden_like(race_name)
+
+    # 新馬 ＋ 平均指数が少なすぎる
+    if maiden and kb_valid < MIN_KB_COUNT:
+        return True, f"maiden kb too few (kb_valid={kb_valid}/{n})"
+
+    # 新馬 ＋ SPも少なすぎる
+    if maiden and sp_valid < MIN_SP_COUNT:
+        return True, f"maiden sp too few (sp_valid={sp_valid})"
+
+    # 非新馬でも欠損が多すぎるなら落とす（保険）
+    if kb_ratio < MIN_VALID_RATIO and kb_valid < MIN_KB_COUNT:
+        return True, f"kb missing too much (kb_valid={kb_valid}/{n}, ratio={kb_ratio:.2f})"
+
+    return False, ""
+# ===== PART 3 / 4 =====
+# predict_all_today.py（改造反映版）
+# 範囲：HTML描画(render_html)〜スコア計算一式（compute_scores_new）まで
+# 次は PART 4 / 4（main本体：変更③＋追加④反映）を貼ってください
+
 # ====== HTML（表示） ======
 def render_html(title: str, preds) -> str:
     import html as _html
@@ -982,6 +1033,10 @@ def compute_scores_new(rows, debug=False):
         print(f"[DEBUG] sp_est_info: {est_info}")
 
     return horses
+# ===== PART 4 / 4 =====
+# predict_all_today.py（改造反映版）
+# 範囲：main() 全部
+# ※このPARTに「変更③：rows作成後の低シグナルSKIP」＋「追加④：スコア横並びSKIP」反映済み
 
 # =========================================================
 # main
@@ -1076,6 +1131,13 @@ def main():
                     "sp_raw": (float(sp) if sp is not None else None),
                 })
 
+            # --- 低シグナル（新馬/欠損過多）をスキップ ---
+            race_name_for_judge = race_name or race_name_from_nar or race_name_kichiuma or ""
+            skip_low, reason_low = should_skip_low_signal(rows, race_name_for_judge, sp_by_umaban)
+            if skip_low:
+                print(f"[SKIP] {track} {rno}R: 低シグナル（{reason_low} / race='{race_name_for_judge}'） -> skip race")
+                continue
+
             # 最低限：馬が少なすぎるレースはやめる
             if len(rows) < 5:
                 print(f"[SKIP] {track} {rno}R: データ不足（出走馬<5） -> skip race")
@@ -1087,8 +1149,14 @@ def main():
                 rng = (max(vals) - min(vals)) if vals else 0.0
                 print(f"[SKIP] {track} {rno}R: 指数が横並びっぽい（range={rng:.2f} <= {FLAT_INDEX_RANGE_MAX}） -> skip race")
                 continue
-          
+
             horses_scored = compute_scores_new(rows, debug=debug)
+
+            # --- スコアが横並び（ほぼ同点）ならスキップ ---
+            scs = [h["score"] for h in horses_scored if isinstance(h.get("score"), (int, float))]
+            if scs and (max(scs) - min(scs) <= FLAT_SCORE_RANGE_MAX):
+                print(f"[SKIP] {track} {rno}R: スコア横並び（range={max(scs)-min(scs):.2f} <= {FLAT_SCORE_RANGE_MAX}） -> skip race")
+                continue
 
             # スコアでソート（同点はSP→KB→馬番）
             horses_scored.sort(key=lambda x: (-x["score"], -x["sp"], -x["base_index"], x["umaban"]))
