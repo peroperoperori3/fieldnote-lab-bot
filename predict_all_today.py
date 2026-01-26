@@ -1081,7 +1081,7 @@ def main():
                 print(f"[SKIP] {track} {rno}R: データ不足（出走馬<5） -> skip race")
                 continue
 
-          # 新馬戦っぽい（指数が横並び）レースはスキップ
+            # 新馬戦っぽい（指数が横並び）レースはスキップ
             if should_skip_flat_index(rows):
                 vals = [float(r["base_index"]) for r in rows if isinstance(r.get("base_index"), (int, float))]
                 rng = (max(vals) - min(vals)) if vals else 0.0
