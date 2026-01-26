@@ -42,6 +42,12 @@ KONSEN_GAP12_MID = float(os.environ.get("KONSEN_GAP12_MID", "0.8"))
 KONSEN_GAP15_MID = float(os.environ.get("KONSEN_GAP15_MID", "3.0"))
 KONSEN_FOCUS_TH = float(os.environ.get("KONSEN_FOCUS_TH", "30"))
 KONSEN_DEBUG = os.environ.get("KONSEN_DEBUG", "").strip() == "1"
+# ===== 新馬戦っぽいレースをスキップ（指数が横並び等） =====
+SKIP_FLAT_INDEX = os.environ.get("SKIP_FLAT_INDEX", "1").strip() != "0"
+# 「ほぼ全員同じ」の判定幅（指数の最大-最小がこれ以下ならスキップ）
+FLAT_INDEX_RANGE_MAX = float(os.environ.get("FLAT_INDEX_RANGE_MAX", "0.8"))
+# 指数が何頭以上そろってたら判定するか（少なすぎると誤判定するので）
+FLAT_INDEX_MIN_COUNT = int(os.environ.get("FLAT_INDEX_MIN_COUNT", "6"))
 
 # ===== NAR（nar.k-ba.net）track code（= keiba.go.jp k_babaCode）※帯広(3)除外 =====
 BABA_CODE = {
@@ -610,6 +616,26 @@ def calc_konsen_gap(top5_scores_desc):
         "sc15": round(sc15, 4),
     }
 
+def should_skip_flat_index(rows) -> bool:
+    """
+    rows: [{base_index: float or None, ...}, ...]
+    指数（base_index）がほぼ横並び（最大-最小が小さい）なら True
+    """
+    if not SKIP_FLAT_INDEX:
+        return False
+
+    vals = []
+    for r in rows:
+        v = r.get("base_index")
+        if isinstance(v, (int, float)):
+            vals.append(float(v))
+
+    if len(vals) < FLAT_INDEX_MIN_COUNT:
+        return False
+
+    rng = max(vals) - min(vals)
+    return rng <= float(FLAT_INDEX_RANGE_MAX)
+
 # ====== HTML（表示） ======
 def render_html(title: str, preds) -> str:
     import html as _html
@@ -1055,6 +1081,13 @@ def main():
                 print(f"[SKIP] {track} {rno}R: データ不足（出走馬<5） -> skip race")
                 continue
 
+          # 新馬戦っぽい（指数が横並び）レースはスキップ
+            if should_skip_flat_index(rows):
+                vals = [float(r["base_index"]) for r in rows if isinstance(r.get("base_index"), (int, float))]
+                rng = (max(vals) - min(vals)) if vals else 0.0
+                print(f"[SKIP] {track} {rno}R: 指数が横並びっぽい（range={rng:.2f} <= {FLAT_INDEX_RANGE_MAX}） -> skip race")
+                continue
+          
             horses_scored = compute_scores_new(rows, debug=debug)
 
             # スコアでソート（同点はSP→KB→馬番）
