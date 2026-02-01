@@ -604,8 +604,8 @@ def render_result_html(title: str, races_out, pnl_summary: dict) -> str:
                 f"</div>")
 
     parts = []
-    parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
-
+    parts.append("<div class='fn-post' style='max-width:980px;margin:0 auto;line-height:1.7;color:#111827;'>")
+    
     if pnl_summary:
         invest = int(pnl_summary.get("invest", 0) or 0)
         payout = int(pnl_summary.get("payout", 0) or 0)
