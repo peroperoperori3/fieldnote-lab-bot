@@ -754,7 +754,7 @@ def render_html(title: str, preds) -> str:
         )
 
     parts = []
-    parts.append("<div style='max-width:980px;margin:0 auto;line-height:1.7;'>")
+    parts.append("<div class='fn-post' style='max-width:980px;margin:0 auto;line-height:1.7;color:#111827;'>")
     parts.append(f"<h2 style='margin:12px 0 8px;font-size:20px;font-weight:900;'>{esc(title)}</h2>")
 
     for race in preds:
