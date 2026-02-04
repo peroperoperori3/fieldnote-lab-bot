@@ -17,8 +17,8 @@ MARKS5 = ["◎", "〇", "▲", "△", "☆"]
 # ===== スコア重み（環境変数で調整可）=====
 # 今回は “同じ土俵で足す” 前提なので、KBもデフォで 1.0 に寄せる
 SP_W = float(os.environ.get("SP_W", "1.0"))
-KB_W = float(os.environ.get("KB_W", "1.0"))
-JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.4"))
+KB_W = float(os.environ.get("KB_W", "0.5"))
+JOCKEY_W = float(os.environ.get("JOCKEY_W", "0.2"))
 
 # ===== 正規化設定 =====
 # NORM_METHOD: "z"（平均/標準偏差） or "robust"（中央値/MAD）
