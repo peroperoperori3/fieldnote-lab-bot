@@ -18,8 +18,22 @@ def wp_request(method, path, **kwargs):
     return requests.request(method, url, auth=auth, timeout=30, **kwargs)
 
 # ==========================
-# カテゴリIDを自動取得（安全版）
+# カテゴリIDを取得（slug優先・安全版）
 # ==========================
+def get_category_id_by_slug(slug: str):
+    r = wp_request(
+        "GET",
+        "/wp-json/wp/v2/categories",
+        params={"slug": slug, "per_page": 100},
+    )
+    if r.status_code != 200:
+        print(f"[WARN] categories slug search failed: {r.status_code} body={r.text[:200]}")
+        return None
+    items = r.json()
+    if items:
+        return items[0].get("id")
+    return None
+
 def get_category_id_by_name(name: str):
     r = wp_request(
         "GET",
@@ -27,12 +41,21 @@ def get_category_id_by_name(name: str):
         params={"search": name, "per_page": 100},
     )
     if r.status_code != 200:
-        print(f"[WARN] categories search failed: {r.status_code}")
+        print(f"[WARN] categories name search failed: {r.status_code} body={r.text[:200]}")
         return None
     for it in r.json():
         if it.get("name") == name:
             return it.get("id")
     return None
+
+def get_category_id(slug: str, name: str):
+    # まずslugで確実に取る（推奨）
+    cid = get_category_id_by_slug(slug)
+    if cid:
+        return cid
+    # ダメなら名前でフォールバック
+    cid = get_category_id_by_name(name)
+    return cid
 
 # ==========================
 # 投稿（既存があればスキップ）
@@ -56,10 +79,12 @@ def create_post_if_not_exists(slug: str, title: str, html: str, status: str, cat
         "slug": slug,
     }
 
-    if category_id:
+    if category_id is not None:
         payload["categories"] = [int(category_id)]
 
     c = wp_request("POST", "/wp-json/wp/v2/posts", json=payload)
+    if c.status_code not in (200, 201):
+        print(f"[ERROR] post failed: {c.status_code} body={c.text[:1000]}")
     c.raise_for_status()
     return "created", c.json().get("link")
 
@@ -80,20 +105,16 @@ def ymd_dot(yyyymmdd: str) -> str:
     return str(yyyymmdd)
 
 def safe_track_slug(place: str, place_code: str = "") -> str:
-    # ★最小変更：
-    # place（開催場名）が取れるなら、常に固定の英字slugを優先
     p = str(place or "").strip()
     if p in TRACK_SLUG:
         return TRACK_SLUG[p]
 
-    # place が不明なケースだけ place_code を使う（数字でもOKだが最後の保険）
     pc = str(place_code or "").strip()
     if pc:
         s = re.sub(r"[^a-zA-Z0-9]+", "-", pc).strip("-").lower()
         if s:
             return s
 
-    # fallback: 英数字だけ残す（日本語は消えるけど空は防ぐ）
     s = re.sub(r"[^a-zA-Z0-9]+", "-", p).strip("-").lower()
     return s if s else "track"
 
@@ -102,17 +123,17 @@ def main():
     if MODE == "predict":
         prefix = "predict_"
         slug_prefix = "predict"
-        category_name = "競馬予想"
+        category_slug = "keiba-predict"
+        category_name = "地方競馬予想"
         mode_label = "予想"
     else:
         prefix = "result_"
         slug_prefix = "result"
-        category_name = "競馬結果"
+        category_slug = "keiba-result"
+        category_name = "地方競馬結果"
         mode_label = "結果"
 
-    # ==========================
-    # ★修正点：DATEが指定されている場合は、その日付のファイルだけ投稿する
-    # ==========================
+    # ★DATEが指定されている場合は、その日付のファイルだけ投稿する
     DATE = re.sub(r"\D", "", os.environ.get("DATE", "").strip())
     pattern = f"output/{prefix}{DATE}_*.json" if DATE else f"output/{prefix}*.json"
     files = sorted(glob.glob(pattern))
@@ -124,8 +145,12 @@ def main():
 
     print(f"[DEBUG] files = {files}")
 
-    category_id = get_category_id_by_name(category_name)
-    print(f"[DEBUG] category_name={category_name} category_id={category_id}")
+    category_id = get_category_id(category_slug, category_name)
+    print(f"[DEBUG] category_slug={category_slug} category_name={category_name} category_id={category_id}")
+
+    # ★カテゴリが取れないなら「未分類で投稿」しない（事故防止）
+    if category_id is None:
+        raise SystemExit(f"[FATAL] category not found: slug={category_slug} name={category_name}")
 
     # 全部投稿（開催場ぶん）
     for json_path in files:
@@ -144,12 +169,10 @@ def main():
             print(f"[SKIP] html not found: {html_path} (jsonだけあるので投稿せずスキップ)")
             continue
 
-        # 1日1場1記事で固定（slug重複しないように track_slug を必ず入れる）
         track_slug = safe_track_slug(place, place_code)
-        date_num = re.sub(r"\D", "", str(date or ""))  # ★ f-stringの外で作る（SyntaxError回避）
+        date_num = re.sub(r"\D", "", str(date or ""))
         slug = f"{slug_prefix}-{date_num}-{track_slug}"
 
-        # タイトルを統一：2026.01.23 笠松競馬 結果（余計な文字なし）
         title = f"{ymd_dot(date)} {place}競馬 {mode_label}"
 
         print(f"[DEBUG] json_path = {json_path}")
