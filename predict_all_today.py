@@ -1247,5 +1247,18 @@ def main():
 
         print(f"[OK] {track} -> {json_path.name} / {html_path.name}  (track={track_id})")
 
+    # =========================
+    # latest（地方 予想）を書き出し
+    # =========================
+    try:
+        Path("output/latest_local_predict.json").write_text(
+            json.dumps({"date": yyyymmdd}, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        if debug:
+            print(f"[OK] wrote output/latest_local_predict.json (date={yyyymmdd})")
+    except Exception as e:
+        print(f"[WARN] failed to write latest_local_predict.json: {e}")
+
 if __name__ == "__main__":
     main()
