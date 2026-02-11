@@ -313,7 +313,6 @@ def clean_horse_name(name: str) -> str:
     s = re.sub(r"\s*(?:想定|取消|除外)\s*$", "", s)
     return s.strip()
 
-
 def clean_race_name(raw: str) -> str:
     s = _norm_text(raw)
 
@@ -508,6 +507,33 @@ def _looks_bad_sanrenpuku_rows(rows):
         if len(nums) != 3:
             return True
     return False
+
+
+# =========================
+# ★追加（最小変更）：表示用の三連複を1つ選ぶ
+# - 結果(1-3着)が取れていれば、その組合せと一致する三連複を優先
+# - 同着などで複数あっても、まずは先頭1つだけ表示用に返す（JS崩さない）
+# =========================
+def pick_sanrenpuku_for_display(result_top3, san_rows):
+    # 結果があるなら、その三連複（1-2-3着）と一致するものを探す
+    if result_top3 and len(result_top3) >= 3:
+        try:
+            nums = sorted([
+                int(result_top3[0]["umaban"]),
+                int(result_top3[1]["umaban"]),
+                int(result_top3[2]["umaban"]),
+            ])
+            key = "-".join(map(str, nums))
+        except Exception:
+            key = ""
+
+        if key:
+            matched = [r for r in (san_rows or []) if _norm_combo(r.get("combo", "")) == key]
+            if matched:
+                return matched[:1]
+
+    # 結果がない/一致なし → 取れた先頭を表示
+    return (san_rows or [])[:1]
 
 
 # ===== 注目レースBOX（上位N頭の三連複BOX） =====
@@ -868,6 +894,15 @@ def main():
                 track_pred_races += 1
                 track_pred_hits += (1 if pred_hit else 0)
 
+            # ★追加（最小変更）：表示用 sanrenpuku を 1つ作る（JS用）
+            san_disp_rows = pick_sanrenpuku_for_display(result_top3, san)
+            sanrenpuku_obj = None
+            if san_disp_rows:
+                sanrenpuku_obj = {
+                    "combo": _norm_combo(san_disp_rows[0].get("combo", "")),
+                    "payout": int(san_disp_rows[0].get("payout", 0) or 0),
+                }
+
             # ---- 注目レースの三連複BOX収支（同着で複数三連複があれば全部加算）----
             bet_box = {"is_focus": False}
             is_focus = bool((konsen or {}).get("is_focus", False))
@@ -914,6 +949,9 @@ def main():
 
                 # ★追加：全体的中バッジ用フラグ
                 "pred_hit": bool(pred_hit),
+
+                # ★追加（最小変更）：三連複バッジ用（地方RESULTのJS表示で使う）
+                "sanrenpuku": sanrenpuku_obj,
 
                 "bet_box": bet_box,
                 "source": {
