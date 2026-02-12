@@ -1069,18 +1069,13 @@ def main():
     # ★LATEST 地方結果（追加）
     # - その日に1つでも result を書けた時だけ更新
     # =========================
-    if wrote_any:
+        if wrote_any:
         latest_path = Path("output/latest_local_result.json")
-        latest_obj = {
-            "date": yyyymmdd,
-            "type": "latest_local_result",
-            "places": wrote_places,
-            "files": wrote_files,
-            "generated_at": datetime.now().isoformat(timespec="seconds"),
-        }
-        latest_path.write_text(json.dumps(latest_obj, ensure_ascii=False, indent=2), encoding="utf-8")
+        latest_path.write_text(
+            json.dumps({"date": yyyymmdd}, ensure_ascii=False),
+            encoding="utf-8"
+        )
         print(f"[OK] wrote {latest_path.as_posix()} ({yyyymmdd})")
-
 
 if __name__ == "__main__":
     main()
