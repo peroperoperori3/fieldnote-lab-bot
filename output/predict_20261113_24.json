@@ -1,0 +1,160 @@
+{
+  "date": "20261113",
+  "place": "名古屋",
+  "place_code": "24",
+  "title": "2026.11.13 名古屋競馬 予想",
+  "predictions": [
+    {
+      "race_no": 1,
+      "race_name": "香嵐渓疾風特別Ｃ１ｃ",
+      "picks": [
+        {
+          "mark": "◎",
+          "umaban": 6,
+          "name": "ノーブルスナイパー",
+          "score": 63.48,
+          "sp": 80.2,
+          "base_index": 106.0,
+          "jockey": "大畑雅",
+          "jockey_add": 4.26,
+          "z": {
+            "sp": 1.4983255651884675,
+            "kb": 1.386207772142215,
+            "jockey": 0.5018705782431165,
+            "combined": 1.3481197452401168,
+            "norm_method": "z"
+          },
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 10,
+          "name": "トレジャービート",
+          "score": 56.98,
+          "sp": 75.4,
+          "base_index": 99.0,
+          "jockey": "塚本征",
+          "jockey_add": 5.83875,
+          "z": {
+            "sp": 0.710361522937959,
+            "kb": 0.46605261304781376,
+            "jockey": 1.2119722121703622,
+            "combined": 0.6975189834681991,
+            "norm_method": "z"
+          },
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 1,
+          "name": "ロイヤルイブキ",
+          "score": 56.23,
+          "sp": 72.8,
+          "base_index": 104.0,
+          "jockey": "今井貴",
+          "jockey_add": 5.51375,
+          "z": {
+            "sp": 0.2835476667189319,
+            "kb": 1.1233062981152433,
+            "jockey": 1.0657913532463053,
+            "combined": 0.6225641684857735,
+            "norm_method": "z"
+          },
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 7,
+          "name": "アブソリュート",
+          "score": 55.98,
+          "sp": 75.1,
+          "base_index": 100.0,
+          "jockey": "大畑慧",
+          "jockey_add": 3.7675,
+          "z": {
+            "sp": 0.6611137702973002,
+            "kb": 0.5975033500612996,
+            "jockey": 0.280350353565892,
+            "combined": 0.5976091270830168,
+            "norm_method": "z"
+          },
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 4,
+          "name": "ウォーオブサウンド",
+          "score": 53.26,
+          "sp": 72.5,
+          "base_index": 100.0,
+          "jockey": "細川智",
+          "jockey_add": 3.37125,
+          "z": {
+            "sp": 0.23429991407827552,
+            "kb": 0.5975033500612996,
+            "jockey": 0.10212215249309947,
+            "combined": 0.32557412918090894,
+            "norm_method": "z"
+          },
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "konsen": {
+        "name": "混戦度",
+        "value": 15.1,
+        "is_focus": false,
+        "gap12": 6.5,
+        "gap15": 10.22,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1096,
+        "sc15": 0.2269
+      }
+    }
+  ],
+  "generated_at": "2026-11-12T12:31:50",
+  "weights": {
+    "SP_W": 1.0,
+    "KB_W": 0.5,
+    "JOCKEY_W": 0.2
+  },
+  "scoring": {
+    "method": "zscore_composite",
+    "norm_method": "z",
+    "score_base": 50.0,
+    "score_scale": 10.0,
+    "notes": "SP/KB/騎手をレース内で標準化（Z化）し、欠損は推定 or レース中央値で補完して合成"
+  },
+  "konsen_config": {
+    "enabled": true,
+    "name": "混戦度",
+    "gap12_mid": 0.8,
+    "gap15_mid": 3.0,
+    "focus_th": 30.0
+  },
+  "source": {
+    "kaisekisya_url": "https://www.kaisekisya.net/local/jockey/nagoya.html",
+    "nar_base": "https://nar.k-ba.net/"
+  }
+}
