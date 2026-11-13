@@ -1,0 +1,233 @@
+{
+  "type": "fieldnote_result",
+  "date": "20261113",
+  "place": "名古屋",
+  "place_code": "48",
+  "baba_code": 24,
+  "title": "2026.11.13 名古屋競馬 結果",
+  "races": [
+    {
+      "race_no": 1,
+      "race_name": "香嵐渓疾風特別Ｃ１ｃ",
+      "konsen": {
+        "name": "混戦度",
+        "value": 15.1,
+        "is_focus": false,
+        "gap12": 6.5,
+        "gap15": 10.22,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1096,
+        "sc15": 0.2269
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 6,
+          "name": "ノーブルスナイパー",
+          "score": 63.48,
+          "sp": 80.2,
+          "base_index": 106.0,
+          "jockey": "大畑雅",
+          "jockey_add": 4.26,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 10,
+          "name": "トレジャービート",
+          "score": 56.98,
+          "sp": 75.4,
+          "base_index": 99.0,
+          "jockey": "塚本征",
+          "jockey_add": 5.83875,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 1,
+          "name": "ロイヤルイブキ",
+          "score": 56.23,
+          "sp": 72.8,
+          "base_index": 104.0,
+          "jockey": "今井貴",
+          "jockey_add": 5.51375,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 7,
+          "name": "アブソリュート",
+          "score": 55.98,
+          "sp": 75.1,
+          "base_index": 100.0,
+          "jockey": "大畑慧",
+          "jockey_add": 3.7675,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 4,
+          "name": "ウォーオブサウンド",
+          "score": 53.26,
+          "sp": 72.5,
+          "base_index": 100.0,
+          "jockey": "細川智",
+          "jockey_add": 3.37125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611130124&date=2026%2F11%2F13&no=1&id=24&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261113&track=24&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 11,
+          "name": "バウアピアーズ"
+        },
+        {
+          "rank": 2,
+          "umaban": 10,
+          "name": "トレジャービート"
+        },
+        {
+          "rank": 3,
+          "umaban": 1,
+          "name": "ロイヤルイブキ"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "1-10-11",
+        "payout": 730
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261113_24.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=24&k_raceDate=2026/11/13&k_raceNo=1",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=24&k_raceDate=2026/11/13"
+      }
+    }
+  ],
+  "pnl_summary": {
+    "focus_races": 0,
+    "hits": 0,
+    "box_n": 5,
+    "bet_unit": 100,
+    "bet_points_per_race": 10,
+    "invest": 0,
+    "payout": 0,
+    "profit": 0
+  },
+  "pnl_total": {
+    "invest": 2925000,
+    "payout": 1993090,
+    "profit": -925910,
+    "races": 2925,
+    "hits": 1020,
+    "last_updated": "2026-11-12T13:00:32",
+    "pred_races": 10033,
+    "pred_hits": 3638,
+    "pred_hit_rate": 36.2,
+    "pred_by_place": {
+      "高知": {
+        "races": 834,
+        "hits": 352,
+        "hit_rate": 42.2
+      },
+      "佐賀": {
+        "races": 907,
+        "hits": 376,
+        "hit_rate": 41.5
+      },
+      "大井": {
+        "races": 826,
+        "hits": 257,
+        "hit_rate": 31.1
+      },
+      "名古屋": {
+        "races": 1035,
+        "hits": 309,
+        "hit_rate": 29.9
+      },
+      "姫路": {
+        "races": 252,
+        "hits": 80,
+        "hit_rate": 31.7
+      },
+      "川崎": {
+        "races": 547,
+        "hits": 145,
+        "hit_rate": 26.5
+      },
+      "笠松": {
+        "races": 732,
+        "hits": 299,
+        "hit_rate": 40.8
+      },
+      "船橋": {
+        "races": 550,
+        "hits": 160,
+        "hit_rate": 29.1
+      },
+      "浦和": {
+        "races": 435,
+        "hits": 98,
+        "hit_rate": 22.5
+      },
+      "水沢": {
+        "races": 507,
+        "hits": 201,
+        "hit_rate": 39.6
+      },
+      "金沢": {
+        "races": 780,
+        "hits": 348,
+        "hit_rate": 44.6
+      },
+      "園田": {
+        "races": 1079,
+        "hits": 414,
+        "hit_rate": 38.4
+      },
+      "門別": {
+        "races": 884,
+        "hits": 391,
+        "hit_rate": 44.2
+      },
+      "盛岡": {
+        "races": 665,
+        "hits": 208,
+        "hit_rate": 31.3
+      }
+    },
+    "roi": 68.3,
+    "hit_rate": 34.9
+  },
+  "generated_at": "2026-11-13T13:00:32",
+  "source": {
+    "predict_json": "output/predict_20261113_24.json",
+    "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=24&k_raceDate=2026/11/13"
+  }
+}
