@@ -1,0 +1,1644 @@
+{
+  "type": "fieldnote_result",
+  "date": "20261119",
+  "place": "園田",
+  "place_code": "50",
+  "baba_code": 27,
+  "title": "2026.11.19 園田競馬 結果",
+  "races": [
+    {
+      "race_no": 1,
+      "race_name": "Ｃ３二３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 16.9,
+        "is_focus": false,
+        "gap12": 4.95,
+        "gap15": 10.43,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1391,
+        "sc15": 0.2234
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 6,
+          "name": "ママトモ",
+          "score": 63.4,
+          "sp": 68.7,
+          "base_index": 90.0,
+          "jockey": "塩津璃",
+          "jockey_add": 2.155,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190127&date=2026%2F11%2F19&no=1&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 9,
+          "name": "エザルターレ",
+          "score": 58.45,
+          "sp": 66.5,
+          "base_index": 81.0,
+          "jockey": "永井孝",
+          "jockey_add": 3.5387499999999994,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190127&date=2026%2F11%2F19&no=1&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 3,
+          "name": "メイショウセツゲツ",
+          "score": 55.19,
+          "sp": 64.5,
+          "base_index": 77.0,
+          "jockey": "山本咲",
+          "jockey_add": 4.577500000000001,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190127&date=2026%2F11%2F19&no=1&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 5,
+          "name": "ニックオブタイム",
+          "score": 54.79,
+          "sp": 65.5,
+          "base_index": 71.0,
+          "jockey": "田野豊",
+          "jockey_add": 5.03125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190127&date=2026%2F11%2F19&no=1&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 10,
+          "name": "ジーティーパール",
+          "score": 52.97,
+          "sp": 65.2,
+          "base_index": 74.0,
+          "jockey": "高畑皓",
+          "jockey_add": 1.33125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190127&date=2026%2F11%2F19&no=1&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=1&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 6,
+          "name": "ママトモ"
+        },
+        {
+          "rank": 2,
+          "umaban": 1,
+          "name": "テイケイアンジェ"
+        },
+        {
+          "rank": 3,
+          "umaban": 10,
+          "name": "ジーティーパール"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "1-6-10",
+        "payout": 8780
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=1",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 2,
+      "race_name": "２歳未勝利二２歳二",
+      "konsen": {
+        "name": "混戦度",
+        "value": 74.4,
+        "is_focus": true,
+        "gap12": 0.1,
+        "gap15": 3.32,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.8889,
+        "sc15": 0.4747
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 5,
+          "name": "ポワソンドール",
+          "score": 56.74,
+          "sp": 54.6,
+          "base_index": 61.0,
+          "jockey": "永井孝",
+          "jockey_add": 3.5387499999999994,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190227&date=2026%2F11%2F19&no=2&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=2&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 2,
+          "name": "ピノプーカ",
+          "score": 56.64,
+          "sp": 59.4,
+          "base_index": 40.0,
+          "jockey": "土方颯",
+          "jockey_add": 3.8525,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190227&date=2026%2F11%2F19&no=2&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=2&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 7,
+          "name": "ホクザンオーロ",
+          "score": 55.82,
+          "sp": 60.7,
+          "base_index": 40.0,
+          "jockey": "長尾翼",
+          "jockey_add": 2.27375,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190227&date=2026%2F11%2F19&no=2&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=2&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 3,
+          "name": "ウメスイショウ",
+          "score": 54.27,
+          "sp": 53.4,
+          "base_index": 56.0,
+          "jockey": "小谷哲",
+          "jockey_add": 3.29875,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190227&date=2026%2F11%2F19&no=2&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=2&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 10,
+          "name": "ユズノソラ",
+          "score": 53.42,
+          "sp": 57.5,
+          "base_index": 40.0,
+          "jockey": "南部楓",
+          "jockey_add": 2.60125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190227&date=2026%2F11%2F19&no=2&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=2&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 10,
+          "name": "ユズノソラ"
+        },
+        {
+          "rank": 2,
+          "umaban": 5,
+          "name": "ポワソンドール"
+        },
+        {
+          "rank": 3,
+          "umaban": 6,
+          "name": "オトワオー"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "5-6-10",
+        "payout": 1810
+      },
+      "bet_box": {
+        "is_focus": true,
+        "box_n": 5,
+        "bet_unit": 100,
+        "bet_points": 10,
+        "invest": 1000,
+        "hit": false,
+        "payout": 0,
+        "profit": -1000,
+        "hit_combos": [],
+        "sanrenpuku_rows": [
+          {
+            "combo": "5-6-10",
+            "payout": 1810
+          }
+        ]
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=2",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 3,
+      "race_name": "Ｃ２二３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 17.2,
+        "is_focus": false,
+        "gap12": 3.6,
+        "gap15": 16.55,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1818,
+        "sc15": 0.1535
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 4,
+          "name": "セブンワンダーズ",
+          "score": 64.36,
+          "sp": 75.4,
+          "base_index": 101.0,
+          "jockey": "田野豊",
+          "jockey_add": 5.03125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190327&date=2026%2F11%2F19&no=3&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=3&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 7,
+          "name": "オーブフレッシュ",
+          "score": 60.76,
+          "sp": 73.8,
+          "base_index": 95.0,
+          "jockey": "山本咲",
+          "jockey_add": 4.577500000000001,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190327&date=2026%2F11%2F19&no=3&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=3&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 3,
+          "name": "クオンタムゲート",
+          "score": 52.38,
+          "sp": 69.6,
+          "base_index": 83.0,
+          "jockey": "竹村達",
+          "jockey_add": 3.68375,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190327&date=2026%2F11%2F19&no=3&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=3&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 2,
+          "name": "レーヌガレット",
+          "score": 50.61,
+          "sp": 67.1,
+          "base_index": 75.0,
+          "jockey": "小牧太",
+          "jockey_add": 9.53,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190327&date=2026%2F11%2F19&no=3&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=3&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 8,
+          "name": "アンガーザガール",
+          "score": 47.81,
+          "sp": 65.2,
+          "base_index": 81.0,
+          "jockey": "笹田知",
+          "jockey_add": 5.88125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190327&date=2026%2F11%2F19&no=3&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=3&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 4,
+          "name": "セブンワンダーズ"
+        },
+        {
+          "rank": 2,
+          "umaban": 8,
+          "name": "アンガーザガール"
+        },
+        {
+          "rank": 3,
+          "umaban": 7,
+          "name": "オーブフレッシュ"
+        }
+      ],
+      "pred_hit": true,
+      "sanrenpuku": {
+        "combo": "4-7-8",
+        "payout": 230
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=3",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 4,
+      "race_name": "ヘルクレス賞Ｃ３一３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 7.6,
+        "is_focus": false,
+        "gap12": 17.06,
+        "gap15": 19.58,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.0448,
+        "sc15": 0.1329
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 3,
+          "name": "エポエポサン",
+          "score": 71.86,
+          "sp": 76.7,
+          "base_index": 93.0,
+          "jockey": "吉村智",
+          "jockey_add": 9.95125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190427&date=2026%2F11%2F19&no=4&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=4&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 10,
+          "name": "メイショウロンド",
+          "score": 54.8,
+          "sp": 66.1,
+          "base_index": 74.0,
+          "jockey": "土方颯",
+          "jockey_add": 3.8525,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190427&date=2026%2F11%2F19&no=4&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=4&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 1,
+          "name": "ララテロワール",
+          "score": 53.07,
+          "sp": 63.6,
+          "base_index": 75.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190427&date=2026%2F11%2F19&no=4&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=4&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 6,
+          "name": "アカキチノイレブン",
+          "score": 52.37,
+          "sp": 62.9,
+          "base_index": 72.0,
+          "jockey": "廣瀬航",
+          "jockey_add": 5.8625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190427&date=2026%2F11%2F19&no=4&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=4&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 2,
+          "name": "ヤマニンラベーラ",
+          "score": 52.28,
+          "sp": 62.9,
+          "base_index": 73.0,
+          "jockey": "田野豊",
+          "jockey_add": 5.03125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190427&date=2026%2F11%2F19&no=4&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=4&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 3,
+          "name": "エポエポサン"
+        },
+        {
+          "rank": 2,
+          "umaban": 7,
+          "name": "ベラジオカムイ"
+        },
+        {
+          "rank": 3,
+          "umaban": 4,
+          "name": "ユーコンノオトコ"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "3-4-7",
+        "payout": 4680
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=4",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 5,
+      "race_name": "ＨＵＫ企画☆不撓不屈スプリントＣ３ ３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 17.1,
+        "is_focus": false,
+        "gap12": 3.7,
+        "gap15": 16.0,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1778,
+        "sc15": 0.1579
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 3,
+          "name": "ハイライフ",
+          "score": 66.55,
+          "sp": 67.1,
+          "base_index": 88.0,
+          "jockey": "小谷哲",
+          "jockey_add": 3.29875,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190527&date=2026%2F11%2F19&no=5&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=5&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 2,
+          "name": "テイケイリノ",
+          "score": 62.85,
+          "sp": 66.5,
+          "base_index": 78.0,
+          "jockey": "廣瀬航",
+          "jockey_add": 5.8625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190527&date=2026%2F11%2F19&no=5&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=5&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 9,
+          "name": "ゴッドホーネット",
+          "score": 54.16,
+          "sp": 62.3,
+          "base_index": 78.0,
+          "jockey": "土方颯",
+          "jockey_add": 3.8525,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190527&date=2026%2F11%2F19&no=5&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=5&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 11,
+          "name": "エクスプレスナイト",
+          "score": 50.59,
+          "sp": 61.0,
+          "base_index": 74.0,
+          "jockey": "山本咲",
+          "jockey_add": 4.577500000000001,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190527&date=2026%2F11%2F19&no=5&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=5&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 12,
+          "name": "サンライズプライド",
+          "score": 50.55,
+          "sp": 61.7,
+          "base_index": 71.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190527&date=2026%2F11%2F19&no=5&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=5&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 11,
+          "name": "エクスプレスナイト"
+        },
+        {
+          "rank": 2,
+          "umaban": 7,
+          "name": "ラブリーローラー"
+        },
+        {
+          "rank": 3,
+          "umaban": 12,
+          "name": "サンライズプライド"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "7-11-12",
+        "payout": 120180
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=5",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 6,
+      "race_name": "Ｃ３ ３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 15.3,
+        "is_focus": false,
+        "gap12": 6.32,
+        "gap15": 10.05,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1124,
+        "sc15": 0.2299
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 5,
+          "name": "ラレイナデオロ",
+          "score": 64.35,
+          "sp": 70.3,
+          "base_index": 81.0,
+          "jockey": "廣瀬航",
+          "jockey_add": 5.8625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190627&date=2026%2F11%2F19&no=6&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=6&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 1,
+          "name": "マダムレディバグ",
+          "score": 58.03,
+          "sp": 69.6,
+          "base_index": 55.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190627&date=2026%2F11%2F19&no=6&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=6&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 4,
+          "name": "テイケイウェリナ",
+          "score": 56.92,
+          "sp": 66.5,
+          "base_index": 71.0,
+          "jockey": "竹村達",
+          "jockey_add": 3.68375,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190627&date=2026%2F11%2F19&no=6&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=6&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 8,
+          "name": "オーサムサンライズ",
+          "score": 54.52,
+          "sp": 66.5,
+          "base_index": 59.0,
+          "jockey": "井上幹",
+          "jockey_add": 3.14625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190627&date=2026%2F11%2F19&no=6&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=6&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 9,
+          "name": "アモーレサンライズ",
+          "score": 54.3,
+          "sp": 66.8,
+          "base_index": 71.0,
+          "jockey": "佐々世",
+          "jockey_add": 0.0,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190627&date=2026%2F11%2F19&no=6&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=6&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 5,
+          "name": "ラレイナデオロ"
+        },
+        {
+          "rank": 2,
+          "umaban": 9,
+          "name": "アモーレサンライズ"
+        },
+        {
+          "rank": 3,
+          "umaban": 3,
+          "name": "ベラジオマサキ"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "3-5-9",
+        "payout": 300
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=6",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 7,
+      "race_name": "２歳未勝利一２歳一",
+      "konsen": {
+        "name": "混戦度",
+        "value": 40.4,
+        "is_focus": true,
+        "gap12": 1.07,
+        "gap15": 5.33,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.4278,
+        "sc15": 0.3601
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 2,
+          "name": "スノーウィザード",
+          "score": 59.72,
+          "sp": 63.6,
+          "base_index": 78.0,
+          "jockey": "小牧太",
+          "jockey_add": 9.53,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190727&date=2026%2F11%2F19&no=7&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=7&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 10,
+          "name": "スマイルマイニング",
+          "score": 58.65,
+          "sp": 64.9,
+          "base_index": 77.0,
+          "jockey": "笹田知",
+          "jockey_add": 5.88125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190727&date=2026%2F11%2F19&no=7&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=7&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 8,
+          "name": "アオイノイコロ",
+          "score": 57.57,
+          "sp": 64.9,
+          "base_index": 76.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190727&date=2026%2F11%2F19&no=7&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=7&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 9,
+          "name": "スマートクラッセ",
+          "score": 54.87,
+          "sp": 63.3,
+          "base_index": 65.0,
+          "jockey": "廣瀬航",
+          "jockey_add": 5.8625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190727&date=2026%2F11%2F19&no=7&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=7&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 4,
+          "name": "コメットテイル",
+          "score": 54.39,
+          "sp": 62.3,
+          "base_index": 73.0,
+          "jockey": "小谷哲",
+          "jockey_add": 3.29875,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190727&date=2026%2F11%2F19&no=7&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=7&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 8,
+          "name": "アオイノイコロ"
+        },
+        {
+          "rank": 2,
+          "umaban": 6,
+          "name": "ワンライトマン"
+        },
+        {
+          "rank": 3,
+          "umaban": 10,
+          "name": "スマイルマイニング"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "6-8-10",
+        "payout": 580
+      },
+      "bet_box": {
+        "is_focus": true,
+        "box_n": 5,
+        "bet_unit": 100,
+        "bet_points": 10,
+        "invest": 1000,
+        "hit": false,
+        "payout": 0,
+        "profit": -1000,
+        "hit_combos": [],
+        "sanrenpuku_rows": [
+          {
+            "combo": "6-8-10",
+            "payout": 580
+          }
+        ]
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=7",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 8,
+      "race_name": "Ｃ２一３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 39.2,
+        "is_focus": true,
+        "gap12": 0.75,
+        "gap15": 15.58,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.5161,
+        "sc15": 0.1615
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 8,
+          "name": "ノリウッドテール",
+          "score": 63.1,
+          "sp": 74.8,
+          "base_index": 96.0,
+          "jockey": "山本咲",
+          "jockey_add": 4.577500000000001,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190827&date=2026%2F11%2F19&no=8&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=8&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 4,
+          "name": "メイショウハチマキ",
+          "score": 62.35,
+          "sp": 74.4,
+          "base_index": 96.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190827&date=2026%2F11%2F19&no=8&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=8&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 6,
+          "name": "ラクプエル",
+          "score": 51.92,
+          "sp": 70.3,
+          "base_index": 87.0,
+          "jockey": "塩津璃",
+          "jockey_add": 2.155,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190827&date=2026%2F11%2F19&no=8&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=8&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 1,
+          "name": "マテンロウアワー",
+          "score": 50.28,
+          "sp": 68.1285472972973,
+          "base_index": 83.0,
+          "jockey": "吉村智",
+          "jockey_add": 9.95125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190827&date=2026%2F11%2F19&no=8&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=8&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 2,
+          "name": "コスモサンビタリア",
+          "score": 47.52,
+          "sp": 67.4,
+          "base_index": 83.0,
+          "jockey": "廣瀬航",
+          "jockey_add": 5.8625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190827&date=2026%2F11%2F19&no=8&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=8&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 1,
+          "name": "マテンロウアワー"
+        },
+        {
+          "rank": 2,
+          "umaban": 4,
+          "name": "メイショウハチマキ"
+        },
+        {
+          "rank": 3,
+          "umaban": 6,
+          "name": "ラクプエル"
+        }
+      ],
+      "pred_hit": true,
+      "sanrenpuku": {
+        "combo": "1-4-6",
+        "payout": 2480
+      },
+      "bet_box": {
+        "is_focus": true,
+        "box_n": 5,
+        "bet_unit": 100,
+        "bet_points": 10,
+        "invest": 1000,
+        "hit": true,
+        "payout": 2480,
+        "profit": 1480,
+        "hit_combos": [
+          "1-4-6"
+        ],
+        "sanrenpuku_rows": [
+          {
+            "combo": "1-4-6",
+            "payout": 2480
+          }
+        ]
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=8",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 9,
+      "race_name": "Ｃ３三３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 17.4,
+        "is_focus": false,
+        "gap12": 3.74,
+        "gap15": 14.66,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1762,
+        "sc15": 0.1699
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 9,
+          "name": "エイシンビシャモン",
+          "score": 63.74,
+          "sp": 66.1,
+          "base_index": 78.0,
+          "jockey": "竹村達",
+          "jockey_add": 3.68375,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190927&date=2026%2F11%2F19&no=9&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=9&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 8,
+          "name": "トゥームレイダー",
+          "score": 60.0,
+          "sp": 63.3,
+          "base_index": 73.0,
+          "jockey": "吉村智",
+          "jockey_add": 9.95125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190927&date=2026%2F11%2F19&no=9&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=9&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 3,
+          "name": "ピロコギガマックス",
+          "score": 56.31,
+          "sp": 62.9,
+          "base_index": 72.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190927&date=2026%2F11%2F19&no=9&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=9&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 7,
+          "name": "メイショウヨウホウ",
+          "score": 54.67,
+          "sp": 62.0,
+          "base_index": 74.0,
+          "jockey": "南部楓",
+          "jockey_add": 2.60125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190927&date=2026%2F11%2F19&no=9&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=9&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 2,
+          "name": "ウルティマン",
+          "score": 49.08,
+          "sp": 60.1,
+          "base_index": 68.0,
+          "jockey": "塩津璃",
+          "jockey_add": 2.155,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611190927&date=2026%2F11%2F19&no=9&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=9&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 9,
+          "name": "エイシンビシャモン"
+        },
+        {
+          "rank": 2,
+          "umaban": 8,
+          "name": "トゥームレイダー"
+        },
+        {
+          "rank": 3,
+          "umaban": 6,
+          "name": "イテマエバファロー"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "6-8-9",
+        "payout": 2310
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=9",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 10,
+      "race_name": "神河町長賞 神河町カーミン特別Ｃ１ ３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 24.3,
+        "is_focus": false,
+        "gap12": 2.24,
+        "gap15": 11.56,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.2632,
+        "sc15": 0.206
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 7,
+          "name": "ジャスティンゴッホ",
+          "score": 62.38,
+          "sp": 82.1,
+          "base_index": 107.0,
+          "jockey": "吉村智",
+          "jockey_add": 9.95125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191027&date=2026%2F11%2F19&no=10&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=10&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 9,
+          "name": "カフジミモレット",
+          "score": 60.14,
+          "sp": 81.5,
+          "base_index": 110.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191027&date=2026%2F11%2F19&no=10&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=10&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 1,
+          "name": "カワキタベレッタ",
+          "score": 55.67,
+          "sp": 76.0,
+          "base_index": 103.0,
+          "jockey": "笹田知",
+          "jockey_add": 5.88125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191027&date=2026%2F11%2F19&no=10&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=10&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 5,
+          "name": "レディーペガサス",
+          "score": 52.83,
+          "sp": 74.4,
+          "base_index": 96.0,
+          "jockey": "田野豊",
+          "jockey_add": 5.03125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191027&date=2026%2F11%2F19&no=10&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=10&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 8,
+          "name": "アドミ",
+          "score": 50.82,
+          "sp": 69.0,
+          "base_index": 95.0,
+          "jockey": "小牧太",
+          "jockey_add": 9.53,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191027&date=2026%2F11%2F19&no=10&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=10&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 7,
+          "name": "ジャスティンゴッホ"
+        },
+        {
+          "rank": 2,
+          "umaban": 9,
+          "name": "カフジミモレット"
+        },
+        {
+          "rank": 3,
+          "umaban": 1,
+          "name": "カワキタベレッタ"
+        }
+      ],
+      "pred_hit": true,
+      "sanrenpuku": {
+        "combo": "1-7-9",
+        "payout": 270
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=10",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 11,
+      "race_name": "初時雨特別Ａ１Ａ２ ３歳以上",
+      "konsen": {
+        "name": "混戦度",
+        "value": 59.5,
+        "is_focus": true,
+        "gap12": 0.3,
+        "gap15": 5.57,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.7273,
+        "sc15": 0.3501
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 12,
+          "name": "ロードラディウス",
+          "score": 59.39,
+          "sp": 85.0,
+          "base_index": 122.0,
+          "jockey": "杉浦健",
+          "jockey_add": 4.2125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191127&date=2026%2F11%2F19&no=11&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=11&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 7,
+          "name": "キングスピカ",
+          "score": 59.09,
+          "sp": 84.0,
+          "base_index": 113.0,
+          "jockey": "小牧太",
+          "jockey_add": 9.53,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191127&date=2026%2F11%2F19&no=11&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=11&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 1,
+          "name": "サイレンスタイム",
+          "score": 55.93,
+          "sp": 82.4,
+          "base_index": 113.0,
+          "jockey": "廣瀬航",
+          "jockey_add": 5.8625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191127&date=2026%2F11%2F19&no=11&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=11&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 4,
+          "name": "イミュータブル",
+          "score": 55.64,
+          "sp": 82.1,
+          "base_index": 113.0,
+          "jockey": "笹田知",
+          "jockey_add": 5.88125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191127&date=2026%2F11%2F19&no=11&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=11&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 3,
+          "name": "ルクスメテオール",
+          "score": 53.82,
+          "sp": 81.5,
+          "base_index": 108.0,
+          "jockey": "田野豊",
+          "jockey_add": 5.03125,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191127&date=2026%2F11%2F19&no=11&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=11&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 7,
+          "name": "キングスピカ"
+        },
+        {
+          "rank": 2,
+          "umaban": 9,
+          "name": "セイルオンセイラー"
+        },
+        {
+          "rank": 3,
+          "umaban": 4,
+          "name": "イミュータブル"
+        }
+      ],
+      "pred_hit": false,
+      "sanrenpuku": {
+        "combo": "4-7-9",
+        "payout": 3300
+      },
+      "bet_box": {
+        "is_focus": true,
+        "box_n": 5,
+        "bet_unit": 100,
+        "bet_points": 10,
+        "invest": 1000,
+        "hit": false,
+        "payout": 0,
+        "profit": -1000,
+        "hit_combos": [],
+        "sanrenpuku_rows": [
+          {
+            "combo": "4-7-9",
+            "payout": 3300
+          }
+        ]
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=11",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    },
+    {
+      "race_no": 12,
+      "race_name": "Ｃ２ ３歳以上特別",
+      "konsen": {
+        "name": "混戦度",
+        "value": 17.8,
+        "is_focus": false,
+        "gap12": 3.59,
+        "gap15": 14.52,
+        "gap12_mid": 0.8,
+        "gap15_mid": 3.0,
+        "focus_th": 30.0,
+        "sc12": 0.1822,
+        "sc15": 0.1712
+      },
+      "pred_top5": [
+        {
+          "mark": "◎",
+          "umaban": 8,
+          "name": "サンオブザサン",
+          "score": 65.11,
+          "sp": 71.9,
+          "base_index": 100.0,
+          "jockey": "廣瀬航",
+          "jockey_add": 5.8625,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191227&date=2026%2F11%2F19&no=12&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=12&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "〇",
+          "umaban": 4,
+          "name": "ナムラオットー",
+          "score": 61.52,
+          "sp": 72.2,
+          "base_index": 91.0,
+          "jockey": "塩津璃",
+          "jockey_add": 2.155,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191227&date=2026%2F11%2F19&no=12&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=12&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "▲",
+          "umaban": 10,
+          "name": "エーピーポエティス",
+          "score": 54.78,
+          "sp": 70.0,
+          "base_index": 83.0,
+          "jockey": "山本太",
+          "jockey_add": 0.0,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191227&date=2026%2F11%2F19&no=12&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=12&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "△",
+          "umaban": 9,
+          "name": "ジュンオーズ",
+          "score": 51.09,
+          "sp": 69.0,
+          "base_index": 69.0,
+          "jockey": "大山真",
+          "jockey_add": 3.67,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191227&date=2026%2F11%2F19&no=12&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=12&condition=1",
+            "nar_condition": "1"
+          }
+        },
+        {
+          "mark": "☆",
+          "umaban": 3,
+          "name": "レジェルテ",
+          "score": 50.59,
+          "sp": 66.02349063150588,
+          "base_index": 75.5,
+          "jockey": "小牧太",
+          "jockey_add": 9.53,
+          "source": {
+            "kichiuma_fp_url": "https://www.kichiuma-chiho.net/php/search.php?race_id=202611191227&date=2026%2F11%2F19&no=12&id=27&p=fp",
+            "nar_table_url": "https://nar.k-ba.net/table.php?date=20261119&track=27&number=12&condition=1",
+            "nar_condition": "1"
+          }
+        }
+      ],
+      "result_top3": [
+        {
+          "rank": 1,
+          "umaban": 8,
+          "name": "サンオブザサン"
+        },
+        {
+          "rank": 2,
+          "umaban": 10,
+          "name": "エーピーポエティス"
+        },
+        {
+          "rank": 3,
+          "umaban": 3,
+          "name": "レジェルテ"
+        }
+      ],
+      "pred_hit": true,
+      "sanrenpuku": {
+        "combo": "3-8-10",
+        "payout": 300
+      },
+      "bet_box": {
+        "is_focus": false
+      },
+      "source": {
+        "predict_json": "output/predict_20261119_27.json",
+        "racemark_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RaceMarkTable?k_babaCode=27&k_raceDate=2026/11/19&k_raceNo=12",
+        "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+      }
+    }
+  ],
+  "pnl_summary": {
+    "focus_races": 4,
+    "hits": 1,
+    "box_n": 5,
+    "bet_unit": 100,
+    "bet_points_per_race": 10,
+    "invest": 4000,
+    "payout": 2480,
+    "profit": -1520
+  },
+  "pnl_total": {
+    "invest": 2970000,
+    "payout": 2028530,
+    "profit": -930970,
+    "races": 2970,
+    "hits": 1035,
+    "last_updated": "2026-11-18T13:00:33",
+    "pred_races": 10164,
+    "pred_hits": 3674,
+    "pred_hit_rate": 36.2,
+    "pred_by_place": {
+      "高知": {
+        "races": 844,
+        "hits": 355,
+        "hit_rate": 42.1
+      },
+      "佐賀": {
+        "races": 907,
+        "hits": 376,
+        "hit_rate": 41.5
+      },
+      "大井": {
+        "races": 867,
+        "hits": 268,
+        "hit_rate": 30.9
+      },
+      "名古屋": {
+        "races": 1035,
+        "hits": 309,
+        "hit_rate": 29.9
+      },
+      "姫路": {
+        "races": 252,
+        "hits": 80,
+        "hit_rate": 31.7
+      },
+      "川崎": {
+        "races": 547,
+        "hits": 145,
+        "hit_rate": 26.5
+      },
+      "笠松": {
+        "races": 753,
+        "hits": 305,
+        "hit_rate": 40.5
+      },
+      "船橋": {
+        "races": 550,
+        "hits": 160,
+        "hit_rate": 29.1
+      },
+      "浦和": {
+        "races": 435,
+        "hits": 98,
+        "hit_rate": 22.5
+      },
+      "水沢": {
+        "races": 542,
+        "hits": 207,
+        "hit_rate": 38.2
+      },
+      "金沢": {
+        "races": 792,
+        "hits": 354,
+        "hit_rate": 44.7
+      },
+      "園田": {
+        "races": 1091,
+        "hits": 418,
+        "hit_rate": 38.3
+      },
+      "門別": {
+        "races": 884,
+        "hits": 391,
+        "hit_rate": 44.2
+      },
+      "盛岡": {
+        "races": 665,
+        "hits": 208,
+        "hit_rate": 31.3
+      }
+    },
+    "roi": 68.5,
+    "hit_rate": 34.9
+  },
+  "generated_at": "2026-11-19T13:00:36",
+  "source": {
+    "predict_json": "output/predict_20261119_27.json",
+    "refundmoney_url": "https://www.keiba.go.jp/KeibaWeb/TodayRaceInfo/RefundMoneyList?k_babaCode=27&k_raceDate=2026/11/19"
+  }
+}
